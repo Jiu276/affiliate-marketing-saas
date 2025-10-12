@@ -447,7 +447,7 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, raw_data = ?
         WHERE id = ?
       `);
 
