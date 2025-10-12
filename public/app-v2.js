@@ -4,6 +4,7 @@ let authToken = null;
 let currentUser = null;
 let platformAccounts = [];
 let selectedAccountIds = []; // 改为数组，支持多选
+let googleSheets = []; // Google表格列表
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('loginForm').addEventListener('submit', handleLogin);
   document.getElementById('registerForm').addEventListener('submit', handleRegister);
   document.getElementById('addAccountForm').addEventListener('submit', handleAddAccount);
+  document.getElementById('addGoogleSheetForm').addEventListener('submit', handleAddGoogleSheet);
   document.getElementById('collectForm').addEventListener('submit', handleCollect);
 });
 
@@ -163,6 +165,7 @@ function showAppSection() {
   document.getElementById('currentUser').textContent = currentUser.username;
 
   loadPlatformAccounts();
+  loadGoogleSheets();
 }
 
 // ============ 平台账号管理 ============
@@ -217,6 +220,7 @@ function renderAccountsList() {
           <div>
             <span class="platform-badge">${account.platform}</span>
             <strong>${account.account_name}</strong>
+            ${account.affiliate_name ? `<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-left: 8px; font-weight: bold;">${account.affiliate_name}</span>` : ''}
             <div style="font-size: 12px; color: #999; margin-top: 5px;">
               添加于 ${new Date(account.created_at).toLocaleDateString()}
             </div>
@@ -308,6 +312,7 @@ async function handleAddAccount(e) {
   const platform = document.getElementById('platformSelect').value;
   const accountName = document.getElementById('accountName').value;
   const accountPassword = document.getElementById('accountPassword').value;
+  const affiliateName = document.getElementById('affiliateName').value.trim();
 
   try {
     const response = await fetch(`${API_BASE}/platform-accounts`, {
@@ -316,7 +321,7 @@ async function handleAddAccount(e) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${authToken}`,
       },
-      body: JSON.stringify({ platform, accountName, accountPassword }),
+      body: JSON.stringify({ platform, accountName, accountPassword, affiliateName }),
     });
 
     const result = await response.json();
@@ -592,4 +597,190 @@ function showMessage(elementId, message, type) {
   const el = document.getElementById(elementId);
   el.textContent = message;
   el.className = `status-message ${type}`;
+}
+
+// ============ Google表格管理 ============
+
+// 加载Google表格列表
+async function loadGoogleSheets() {
+  try {
+    const response = await fetch(`${API_BASE}/google-sheets`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      googleSheets = result.data;
+      renderGoogleSheetsList();
+    }
+  } catch (error) {
+    console.error('加载Google表格失败:', error);
+  }
+}
+
+// 渲染Google表格列表
+function renderGoogleSheetsList() {
+  const container = document.getElementById('googleSheetsList');
+
+  if (googleSheets.length === 0) {
+    container.innerHTML = '<p style="color: #999;">暂无Google表格，请先添加</p>';
+    return;
+  }
+
+  container.innerHTML = googleSheets
+    .map(
+      sheet => `
+    <div class="account-item">
+      <div class="account-info">
+        <div>
+          <span class="platform-badge" style="background: #4285f4;">Google Sheets</span>
+          <strong>${sheet.sheet_name}</strong>
+          ${sheet.description ? `<div style="font-size: 12px; color: #999; margin-top: 5px;">${sheet.description}</div>` : ''}
+          <div style="font-size: 12px; color: #999; margin-top: 5px;">
+            添加于 ${new Date(sheet.created_at).toLocaleDateString()}
+          </div>
+        </div>
+      </div>
+      <div class="account-actions">
+        <button onclick="collectGoogleSheetData(${sheet.id})" class="btn-primary" style="margin-right: 10px;">
+          采集数据
+        </button>
+        <button onclick="viewSheetUrl('${sheet.sheet_url}')" class="btn-secondary" style="margin-right: 10px;">
+          查看表格
+        </button>
+        <button onclick="deleteGoogleSheet(${sheet.id})" class="btn-danger">删除</button>
+      </div>
+    </div>
+  `
+    )
+    .join('');
+}
+
+// 显示添加Google表格弹窗
+function showAddGoogleSheetModal() {
+  document.getElementById('addGoogleSheetModal').style.display = 'block';
+}
+
+// 关闭添加Google表格弹窗
+function closeAddGoogleSheetModal() {
+  document.getElementById('addGoogleSheetModal').style.display = 'none';
+  document.getElementById('addGoogleSheetForm').reset();
+  document.getElementById('addGoogleSheetStatus').className = 'status-message';
+  document.getElementById('addGoogleSheetStatus').textContent = '';
+}
+
+// 处理添加Google表格
+async function handleAddGoogleSheet(e) {
+  e.preventDefault();
+
+  const sheetName = document.getElementById('sheetName').value;
+  const sheetUrl = document.getElementById('sheetUrl').value;
+  const description = document.getElementById('sheetDescription').value;
+
+  try {
+    const response = await fetch(`${API_BASE}/google-sheets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ sheetName, sheetUrl, description }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      showMessage('addGoogleSheetStatus', '添加成功！', 'success');
+
+      setTimeout(() => {
+        closeAddGoogleSheetModal();
+        loadGoogleSheets();
+      }, 1000);
+    } else {
+      showMessage('addGoogleSheetStatus', result.message, 'error');
+    }
+  } catch (error) {
+    showMessage('addGoogleSheetStatus', '网络请求失败: ' + error.message, 'error');
+  }
+}
+
+// 删除Google表格
+async function deleteGoogleSheet(sheetId) {
+  if (!confirm('确定要删除这个Google表格吗？相关的广告数据也会被删除。')) return;
+
+  try {
+    const response = await fetch(`${API_BASE}/google-sheets/${sheetId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      alert('删除成功');
+      loadGoogleSheets();
+    } else {
+      alert('删除失败: ' + result.message);
+    }
+  } catch (error) {
+    alert('网络请求失败: ' + error.message);
+  }
+}
+
+// 查看表格URL
+function viewSheetUrl(url) {
+  window.open(url, '_blank');
+}
+
+// 采集Google表格数据
+async function collectGoogleSheetData(sheetId) {
+  const sheet = googleSheets.find(s => s.id === sheetId);
+  if (!sheet) return;
+
+  if (!confirm(`确定要采集表格"${sheet.sheet_name}"的数据吗？`)) return;
+
+  const statusMsg = `正在采集 ${sheet.sheet_name} 的数据...`;
+
+  // 临时创建一个状态提示区域
+  const statusDiv = document.createElement('div');
+  statusDiv.id = 'collectSheetStatus';
+  statusDiv.className = 'status-message info';
+  statusDiv.textContent = statusMsg;
+  statusDiv.style.marginTop = '15px';
+
+  const container = document.getElementById('googleSheetsList');
+  const existingStatus = document.getElementById('collectSheetStatus');
+  if (existingStatus) {
+    existingStatus.remove();
+  }
+  container.parentElement.insertBefore(statusDiv, container.nextSibling);
+
+  try {
+    const response = await fetch(`${API_BASE}/collect-google-sheets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ sheetId }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      statusDiv.textContent = `✅ ${result.message}`;
+      statusDiv.className = 'status-message success';
+
+      setTimeout(() => {
+        statusDiv.remove();
+      }, 5000);
+    } else {
+      statusDiv.textContent = `❌ 采集失败: ${result.message}`;
+      statusDiv.className = 'status-message error';
+    }
+  } catch (error) {
+    statusDiv.textContent = `❌ 网络请求失败: ${error.message}`;
+    statusDiv.className = 'status-message error';
+  }
 }

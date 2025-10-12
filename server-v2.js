@@ -140,7 +140,7 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
  */
 app.post('/api/platform-accounts', authenticateToken, (req, res) => {
   try {
-    const { platform, accountName, accountPassword } = req.body;
+    const { platform, accountName, accountPassword, affiliateName } = req.body;
 
     if (!platform || !accountName || !accountPassword) {
       return res.json({ success: false, message: '缺少必要参数' });
@@ -151,14 +151,14 @@ app.post('/api/platform-accounts', authenticateToken, (req, res) => {
 
     const result = db
       .prepare(
-        'INSERT INTO platform_accounts (user_id, platform, account_name, account_password) VALUES (?, ?, ?, ?)'
+        'INSERT INTO platform_accounts (user_id, platform, account_name, account_password, affiliate_name) VALUES (?, ?, ?, ?, ?)'
       )
-      .run(req.user.id, platform, accountName, encryptedPassword);
+      .run(req.user.id, platform, accountName, encryptedPassword, affiliateName || null);
 
     res.json({
       success: true,
       message: '平台账号添加成功',
-      data: { id: result.lastInsertRowid, platform, accountName },
+      data: { id: result.lastInsertRowid, platform, accountName, affiliateName },
     });
   } catch (error) {
     if (error.message.includes('UNIQUE')) {
@@ -177,7 +177,7 @@ app.get('/api/platform-accounts', authenticateToken, (req, res) => {
   try {
     const accounts = db
       .prepare(
-        'SELECT id, platform, account_name, is_active, created_at FROM platform_accounts WHERE user_id = ?'
+        'SELECT id, platform, account_name, affiliate_name, is_active, created_at FROM platform_accounts WHERE user_id = ?'
       )
       .all(req.user.id);
 
@@ -666,6 +666,307 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
     res.json({ success: true, data: summary });
   } catch (error) {
     console.error('获取商家汇总错误:', error);
+    res.json({ success: false, message: '获取失败: ' + error.message });
+  }
+});
+
+// ============ Google表格管理API ============
+
+/**
+ * 从Google Sheets URL提取sheet ID
+ */
+function extractSheetId(url) {
+  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * 从广告系列名提取联盟名称和商家编号
+ * 格式：596-pm1-Champion-US-0826-71017
+ * 联盟名称：第1个-和第2个-之间 → pm1
+ * 商家编号：最后一个-之后 → 71017
+ */
+function extractCampaignInfo(campaignName) {
+  if (!campaignName) {
+    return { affiliateName: '', merchantId: '' };
+  }
+
+  const parts = campaignName.split('-');
+
+  // 联盟名称：第2个元素（索引1）
+  const affiliateName = parts.length >= 2 ? parts[1] : '';
+
+  // 商家编号：最后一个元素
+  const merchantId = parts.length > 0 ? parts[parts.length - 1] : '';
+
+  return { affiliateName, merchantId };
+}
+
+/**
+ * API: 添加Google表格
+ * POST /api/google-sheets
+ */
+app.post('/api/google-sheets', authenticateToken, (req, res) => {
+  try {
+    const { sheetName, sheetUrl, description } = req.body;
+
+    if (!sheetName || !sheetUrl) {
+      return res.json({ success: false, message: '缺少必要参数' });
+    }
+
+    // 提取sheet ID
+    const sheetId = extractSheetId(sheetUrl);
+    if (!sheetId) {
+      return res.json({ success: false, message: '无效的Google表格URL' });
+    }
+
+    const result = db
+      .prepare(
+        'INSERT INTO google_sheets (user_id, sheet_name, sheet_url, sheet_id, description) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run(req.user.id, sheetName, sheetUrl, sheetId, description || '');
+
+    res.json({
+      success: true,
+      message: 'Google表格添加成功',
+      data: { id: result.lastInsertRowid, sheetName, sheetId },
+    });
+  } catch (error) {
+    console.error('添加Google表格错误:', error);
+    res.json({ success: false, message: '添加失败: ' + error.message });
+  }
+});
+
+/**
+ * API: 获取Google表格列表
+ * GET /api/google-sheets
+ */
+app.get('/api/google-sheets', authenticateToken, (req, res) => {
+  try {
+    const sheets = db
+      .prepare('SELECT * FROM google_sheets WHERE user_id = ? ORDER BY created_at DESC')
+      .all(req.user.id);
+
+    res.json({ success: true, data: sheets });
+  } catch (error) {
+    console.error('获取Google表格错误:', error);
+    res.json({ success: false, message: '获取失败: ' + error.message });
+  }
+});
+
+/**
+ * API: 删除Google表格
+ * DELETE /api/google-sheets/:id
+ */
+app.delete('/api/google-sheets/:id', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = db
+      .prepare('DELETE FROM google_sheets WHERE id = ? AND user_id = ?')
+      .run(id, req.user.id);
+
+    if (result.changes === 0) {
+      return res.json({ success: false, message: '表格不存在或无权删除' });
+    }
+
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    console.error('删除Google表格错误:', error);
+    res.json({ success: false, message: '删除失败: ' + error.message });
+  }
+});
+
+/**
+ * API: 采集Google表格数据
+ * POST /api/collect-google-sheets
+ */
+app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
+  try {
+    const { sheetId } = req.body;
+
+    if (!sheetId) {
+      return res.json({ success: false, message: '缺少必要参数' });
+    }
+
+    // 验证表格归属
+    const sheet = db
+      .prepare('SELECT * FROM google_sheets WHERE id = ? AND user_id = ?')
+      .get(sheetId, req.user.id);
+
+    if (!sheet) {
+      return res.json({ success: false, message: 'Google表格不存在或无权访问' });
+    }
+
+    // 构建CSV导出URL（公开表格可直接访问）
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheet.sheet_id}/export?format=csv&gid=0`;
+
+    console.log(`📥 开始采集Google表格: ${sheet.sheet_name}`);
+
+    // 获取CSV数据
+    const response = await axios.get(csvUrl);
+    const csvData = response.data;
+
+    // 解析CSV数据
+    const lines = csvData.split('\n');
+
+    // 根据你的描述，A3开始是数据，所以跳过前2行
+    const dataLines = lines.slice(2).filter(line => line.trim());
+
+    let newCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    // 获取今天的日期（用于增量更新）
+    const today = new Date().toISOString().split('T')[0];
+
+    // 准备SQL语句
+    const selectStmt = db.prepare(`
+      SELECT id FROM google_ads_data
+      WHERE sheet_id = ? AND date = ? AND campaign_name = ?
+    `);
+
+    const insertStmt = db.prepare(`
+      INSERT INTO google_ads_data
+      (user_id, sheet_id, date, campaign_name, affiliate_name, merchant_id, campaign_budget, currency, impressions, clicks, cost)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const updateStmt = db.prepare(`
+      UPDATE google_ads_data
+      SET affiliate_name = ?, merchant_id = ?, campaign_budget = ?, currency = ?, impressions = ?, clicks = ?, cost = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+
+    // 解析每一行数据
+    for (const line of dataLines) {
+      if (!line.trim()) continue;
+
+      // CSV解析（简单处理，假设没有包含逗号的字段）
+      const fields = line.split(',').map(f => f.trim().replace(/^"|"$/g, ''));
+
+      if (fields.length < 11) continue; // 数据不完整，至少需要11列
+
+      // 正确的列顺序映射：
+      // 0=广告系列名, 1=目标投放国家, 2=最终到达网址, 3=广告系列预算, 4=广告系列预算所属货币,
+      // 5=广告系列类型, 6=出价策略, 7=日期, 8=展示次数, 9=点击次数, 10=花费
+      const campaignName = fields[0] || '';
+      const date = fields[7] || '';
+      const budget = parseFloat(fields[3]) || 0;
+      const currency = fields[4] || '';
+      const impressions = parseInt(fields[8]) || 0;
+      const clicks = parseInt(fields[9]) || 0;
+      const cost = parseFloat(fields[10]) || 0;
+
+      if (!date || !campaignName) continue; // 必填字段检查
+
+      // 提取联盟名称和商家编号
+      const { affiliateName, merchantId } = extractCampaignInfo(campaignName);
+
+      // 增量更新逻辑：只更新今天的数据
+      if (date === today) {
+        const existing = selectStmt.get(sheetId, date, campaignName);
+
+        if (existing) {
+          // 更新今日数据
+          updateStmt.run(affiliateName, merchantId, budget, currency, impressions, clicks, cost, existing.id);
+          updatedCount++;
+        } else {
+          // 插入新数据
+          insertStmt.run(
+            req.user.id,
+            sheetId,
+            date,
+            campaignName,
+            affiliateName,
+            merchantId,
+            budget,
+            currency,
+            impressions,
+            clicks,
+            cost
+          );
+          newCount++;
+        }
+      } else {
+        // 非今日数据，检查是否存在
+        const existing = selectStmt.get(sheetId, date, campaignName);
+        if (!existing) {
+          // 历史数据不存在，插入
+          insertStmt.run(
+            req.user.id,
+            sheetId,
+            date,
+            campaignName,
+            affiliateName,
+            merchantId,
+            budget,
+            currency,
+            impressions,
+            clicks,
+            cost
+          );
+          newCount++;
+        } else {
+          skippedCount++;
+        }
+      }
+    }
+
+    const message = `采集完成：新增 ${newCount} 条，更新 ${updatedCount} 条，跳过 ${skippedCount} 条`;
+    console.log(`✅ ${message}`);
+
+    res.json({
+      success: true,
+      message: message,
+      data: {
+        stats: {
+          new: newCount,
+          updated: updatedCount,
+          skipped: skippedCount,
+          total: dataLines.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('采集Google表格错误:', error);
+    res.json({ success: false, message: '采集失败: ' + error.message });
+  }
+});
+
+/**
+ * API: 获取Google广告数据
+ * GET /api/google-ads-data
+ */
+app.get('/api/google-ads-data', authenticateToken, (req, res) => {
+  try {
+    const { startDate, endDate, sheetId } = req.query;
+
+    let query = 'SELECT * FROM google_ads_data WHERE user_id = ?';
+    const params = [req.user.id];
+
+    if (startDate) {
+      query += ' AND date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ' AND date <= ?';
+      params.push(endDate);
+    }
+
+    if (sheetId) {
+      query += ' AND sheet_id = ?';
+      params.push(sheetId);
+    }
+
+    query += ' ORDER BY date DESC, campaign_name ASC LIMIT 1000';
+
+    const data = db.prepare(query).all(...params);
+
+    res.json({ success: true, data: data });
+  } catch (error) {
+    console.error('获取Google广告数据错误:', error);
     res.json({ success: false, message: '获取失败: ' + error.message });
   }
 });
