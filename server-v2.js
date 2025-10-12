@@ -533,9 +533,9 @@ app.get('/api/stats', authenticateToken, (req, res) => {
         COUNT(*) as total_orders,
         SUM(order_amount) as total_amount,
         SUM(commission) as total_commission,
-        SUM(CASE WHEN status = 'Confirmed' OR status = 'Paid' THEN commission ELSE 0 END) as confirmed_commission,
+        SUM(CASE WHEN status = 'Approved' THEN commission ELSE 0 END) as confirmed_commission,
         SUM(CASE WHEN status = 'Pending' THEN commission ELSE 0 END) as pending_commission,
-        SUM(CASE WHEN status = 'Rejected' OR status = 'Cancelled' THEN commission ELSE 0 END) as rejected_commission
+        SUM(CASE WHEN status = 'Rejected' THEN commission ELSE 0 END) as rejected_commission
       FROM orders WHERE user_id = ?
     `;
     const params = [req.user.id];
@@ -579,9 +579,9 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
         COUNT(*) as order_count,
         SUM(order_amount) as total_amount,
         SUM(commission) as total_commission,
-        SUM(CASE WHEN status = 'Confirmed' OR status = 'Paid' THEN commission ELSE 0 END) as confirmed_commission,
+        SUM(CASE WHEN status = 'Approved' THEN commission ELSE 0 END) as confirmed_commission,
         SUM(CASE WHEN status = 'Pending' THEN commission ELSE 0 END) as pending_commission,
-        SUM(CASE WHEN status = 'Rejected' OR status = 'Cancelled' THEN commission ELSE 0 END) as rejected_commission
+        SUM(CASE WHEN status = 'Rejected' THEN commission ELSE 0 END) as rejected_commission
       FROM orders
       WHERE user_id = ?
     `;

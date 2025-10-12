@@ -412,9 +412,9 @@ function calculateAndDisplayMerchantSummary(orders) {
 
     if (order.status === 'Pending') {
       merchant.pending_commission += commission;
-    } else if (order.status === 'Confirmed' || order.status === 'Paid') {
+    } else if (order.status === 'Approved') {
       merchant.confirmed_commission += commission;
-    } else if (order.status === 'Rejected' || order.status === 'Cancelled') {
+    } else if (order.status === 'Rejected') {
       merchant.rejected_commission += commission;
     }
   });
