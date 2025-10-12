@@ -522,70 +522,133 @@ function displayStats(total) {
   document.getElementById('statsSection').style.display = 'block';
 }
 
-// 计算并显示本次采集的商家汇总（前端计算）
-function calculateAndDisplayMerchantSummary(orders) {
-  const merchantMap = new Map();
+// 计算并显示本次采集的商家汇总（改为从后端API获取，包含广告数据）
+async function calculateAndDisplayMerchantSummary(orders) {
+  // 获取日期范围（从采集表单）
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
 
-  orders.forEach(order => {
-    const mcid = order.mcid;
-    if (!merchantMap.has(mcid)) {
-      merchantMap.set(mcid, {
-        merchant_id: mcid,
-        merchant_name: order.sitename,
-        order_count: 0,
-        total_amount: 0,
-        total_commission: 0,
-        pending_commission: 0,
-        confirmed_commission: 0,
-        rejected_commission: 0,
+  try {
+    // 调用后端API获取商家汇总（包含广告数据）
+    const response = await fetch(`${API_BASE}/merchant-summary?startDate=${startDate}&endDate=${endDate}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      displayMerchantSummary(result.data);
+    } else {
+      console.error('获取商家汇总失败:', result.message);
+      // 降级方案：使用前端计算（不含广告数据）
+      const merchantMap = new Map();
+
+      orders.forEach(order => {
+        const mcid = order.mcid;
+        if (!merchantMap.has(mcid)) {
+          merchantMap.set(mcid, {
+            merchant_id: mcid,
+            merchant_name: order.sitename,
+            order_count: 0,
+            total_amount: 0,
+            total_commission: 0,
+            pending_commission: 0,
+            confirmed_commission: 0,
+            rejected_commission: 0,
+          });
+        }
+
+        const merchant = merchantMap.get(mcid);
+        merchant.order_count++;
+        merchant.total_amount += parseFloat(order.amount || 0);
+
+        const commission = parseFloat(order.total_cmsn || 0);
+        merchant.total_commission += commission;
+
+        if (order.status === 'Pending') {
+          merchant.pending_commission += commission;
+        } else if (order.status === 'Approved') {
+          merchant.confirmed_commission += commission;
+        } else if (order.status === 'Rejected') {
+          merchant.rejected_commission += commission;
+        }
       });
+
+      const summary = Array.from(merchantMap.values());
+      summary.sort((a, b) => b.total_commission - a.total_commission);
+
+      displayMerchantSummary(summary);
     }
-
-    const merchant = merchantMap.get(mcid);
-    merchant.order_count++;
-    merchant.total_amount += parseFloat(order.amount || 0);
-
-    const commission = parseFloat(order.total_cmsn || 0);
-    merchant.total_commission += commission;
-
-    if (order.status === 'Pending') {
-      merchant.pending_commission += commission;
-    } else if (order.status === 'Approved') {
-      merchant.confirmed_commission += commission;
-    } else if (order.status === 'Rejected') {
-      merchant.rejected_commission += commission;
-    }
-  });
-
-  const summary = Array.from(merchantMap.values());
-  summary.sort((a, b) => b.total_commission - a.total_commission);
-
-  displayMerchantSummary(summary);
+  } catch (error) {
+    console.error('调用商家汇总API失败:', error);
+    // 降级方案同上
+    displayMerchantSummary([]);
+  }
 }
 
-// 显示商家汇总表格
+// 显示商家汇总表格（包含营销指标：CR、EPC、CPC、ROI）
 function displayMerchantSummary(summary) {
   const tbody = document.getElementById('merchantTableBody');
   tbody.innerHTML = '';
 
   if (summary.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #999;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center; color: #999;">暂无数据</td></tr>';
     document.getElementById('merchantSection').style.display = 'block';
     return;
   }
 
   summary.forEach((merchant, index) => {
+    // 处理广告系列名称（可能很长，截取前面部分或显示数量）
+    let campaignDisplay = '-';
+    if (merchant.campaign_names) {
+      const campaigns = merchant.campaign_names.split(',');
+      if (campaigns.length > 1) {
+        campaignDisplay = `${campaigns[0].substring(0, 25)}... (共${campaigns.length}个)`;
+      } else {
+        campaignDisplay = campaigns[0].substring(0, 35) + (campaigns[0].length > 35 ? '...' : '');
+      }
+    }
+
+    // 计算营销指标
+    const clicks = merchant.total_clicks || 0;
+    const orders = merchant.order_count || 0;
+    const commission = merchant.total_commission || 0;
+    const cost = merchant.total_cost || 0;
+
+    // CR (Conversion Rate) = 订单数 / 点击数 * 100%
+    const cr = clicks > 0 ? (orders / clicks * 100).toFixed(2) : '0.00';
+
+    // EPC (Earnings Per Click) = 总佣金 / 点击数
+    const epc = clicks > 0 ? (commission / clicks).toFixed(2) : '0.00';
+
+    // CPC (Cost Per Click) = 广告费 / 点击数
+    const cpc = clicks > 0 ? (cost / clicks).toFixed(2) : '0.00';
+
+    // ROI (Return On Investment) = (总佣金 - 广告费) / 广告费 * 100%
+    let roi = '0.00';
+    let roiColor = '#999';
+    if (cost > 0) {
+      const roiValue = ((commission - cost) / cost * 100);
+      roi = roiValue.toFixed(2);
+      // ROI颜色：正数绿色，负数红色
+      roiColor = roiValue >= 0 ? '#28a745' : '#dc3545';
+    }
+
     const row = tbody.insertRow();
     row.innerHTML = `
       <td>${index + 1}</td>
-      <td><strong>${merchant.merchant_name || '未知'}</strong></td>
-      <td>${merchant.merchant_id || '-'}</td>
-      <td>${merchant.order_count || 0}</td>
-      <td>$${(merchant.total_amount || 0).toFixed(2)}</td>
-      <td><strong style="color: #667eea;">$${(merchant.total_commission || 0).toFixed(2)}</strong></td>
-      <td style="color: #ffa500;">$${(merchant.pending_commission || 0).toFixed(2)}</td>
-      <td style="color: #28a745;">$${(merchant.confirmed_commission || 0).toFixed(2)}</td>
-      <td style="color: #dc3545;">$${(merchant.rejected_commission || 0).toFixed(2)}</td>
+      <td style="background: #f0f4ff; font-size: 12px;" title="${merchant.campaign_names || '-'}">${campaignDisplay}</td>
+      <td><strong>${merchant.merchant_id || '-'}</strong></td>
+      <td style="background: #f0f4ff;">$${(merchant.total_budget || 0).toFixed(2)}</td>
+      <td style="background: #f0f4ff;">${(merchant.total_impressions || 0).toLocaleString()}</td>
+      <td style="background: #f0f4ff;">${clicks.toLocaleString()}</td>
+      <td style="background: #f0f4ff;"><strong style="color: #dc3545;">$${cost.toFixed(2)}</strong></td>
+      <td>${orders}</td>
+      <td><strong style="color: #667eea;">$${commission.toFixed(2)}</strong></td>
+      <td style="background: #e8f5e9;"><strong>${cr}%</strong></td>
+      <td style="background: #e8f5e9;"><strong>$${epc}</strong></td>
+      <td style="background: #e8f5e9;"><strong>$${cpc}</strong></td>
+      <td style="background: #e8f5e9;"><strong style="color: ${roiColor};">${roi}%</strong></td>
     `;
   });
 

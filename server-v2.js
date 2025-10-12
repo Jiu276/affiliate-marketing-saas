@@ -622,14 +622,15 @@ app.get('/api/stats', authenticateToken, (req, res) => {
 });
 
 /**
- * API: 获取商家汇总数据
+ * API: 获取商家汇总数据（包含广告数据）
  * GET /api/merchant-summary
  */
 app.get('/api/merchant-summary', authenticateToken, (req, res) => {
   try {
     const { startDate, endDate, platformAccountId } = req.query;
 
-    let query = `
+    // 第一步：获取订单汇总
+    let orderQuery = `
       SELECT
         merchant_id,
         merchant_name,
@@ -642,28 +643,90 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       FROM orders
       WHERE user_id = ?
     `;
-    const params = [req.user.id];
+    const orderParams = [req.user.id];
 
     if (startDate) {
-      query += ' AND order_date >= ?';
-      params.push(startDate);
+      orderQuery += ' AND order_date >= ?';
+      orderParams.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND order_date <= ?';
-      params.push(endDate);
+      orderQuery += ' AND order_date <= ?';
+      orderParams.push(endDate);
     }
 
     if (platformAccountId) {
-      query += ' AND platform_account_id = ?';
-      params.push(platformAccountId);
+      orderQuery += ' AND platform_account_id = ?';
+      orderParams.push(platformAccountId);
     }
 
-    query += ' GROUP BY merchant_id, merchant_name ORDER BY total_commission DESC';
+    orderQuery += ' GROUP BY merchant_id, merchant_name ORDER BY total_commission DESC';
 
-    const summary = db.prepare(query).all(...params);
+    const orderSummary = db.prepare(orderQuery).all(...orderParams);
 
-    res.json({ success: true, data: summary });
+    // 第二步：获取广告数据汇总（按merchant_id分组）
+    let adsQuery = `
+      SELECT
+        merchant_id,
+        GROUP_CONCAT(DISTINCT campaign_name) as campaign_names,
+        SUM(campaign_budget) as total_budget,
+        SUM(impressions) as total_impressions,
+        SUM(clicks) as total_clicks,
+        SUM(cost) as total_cost
+      FROM google_ads_data
+      WHERE user_id = ?
+    `;
+    const adsParams = [req.user.id];
+
+    if (startDate) {
+      adsQuery += ' AND date >= ?';
+      adsParams.push(startDate);
+    }
+
+    if (endDate) {
+      adsQuery += ' AND date <= ?';
+      adsParams.push(endDate);
+    }
+
+    adsQuery += ' GROUP BY merchant_id';
+
+    const adsSummary = db.prepare(adsQuery).all(...adsParams);
+
+    // 第三步：合并数据
+    const adsMap = new Map();
+    adsSummary.forEach(ads => {
+      if (ads.merchant_id) {
+        adsMap.set(ads.merchant_id, {
+          campaign_names: ads.campaign_names || '',
+          total_budget: ads.total_budget || 0,
+          total_impressions: ads.total_impressions || 0,
+          total_clicks: ads.total_clicks || 0,
+          total_cost: ads.total_cost || 0
+        });
+      }
+    });
+
+    // 合并订单汇总和广告数据
+    const mergedSummary = orderSummary.map(order => {
+      const adsData = adsMap.get(order.merchant_id) || {
+        campaign_names: '',
+        total_budget: 0,
+        total_impressions: 0,
+        total_clicks: 0,
+        total_cost: 0
+      };
+
+      return {
+        ...order,
+        campaign_names: adsData.campaign_names,
+        total_budget: adsData.total_budget,
+        total_impressions: adsData.total_impressions,
+        total_clicks: adsData.total_clicks,
+        total_cost: adsData.total_cost
+      };
+    });
+
+    res.json({ success: true, data: mergedSummary });
   } catch (error) {
     console.error('获取商家汇总错误:', error);
     res.json({ success: false, message: '获取失败: ' + error.message });
