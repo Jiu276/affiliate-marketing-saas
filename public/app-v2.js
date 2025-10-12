@@ -429,7 +429,7 @@ async function handleCollect(e) {
 
         if (result.success && result.data && result.data.orders) {
           allOrders.push(...result.data.orders);
-          totalOrdersCount += result.data.total.items || 0;
+          totalOrdersCount += parseInt(result.data.total.items) || 0;
           successCount++;
 
           showMessage(
