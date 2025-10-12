@@ -195,6 +195,9 @@ function renderAccountsList() {
     return;
   }
 
+  // 清空之前的选择状态
+  selectedAccountIds = [];
+
   container.innerHTML = `
     <div style="margin-bottom: 15px;">
       <button onclick="selectAllAccounts()" class="btn-secondary">全选</button>
@@ -230,16 +233,22 @@ function renderAccountsList() {
 
   // 显示采集区域
   document.getElementById('collectSection').style.display = 'block';
+
+  // 清空状态提示
+  showMessage('collectStatus', '请勾选要采集的账号', 'info');
 }
 
 // 切换账号选择状态
 function toggleAccountSelection(accountId) {
-  const index = selectedAccountIds.indexOf(accountId);
+  // 确保accountId是数字类型
+  const id = typeof accountId === 'string' ? parseInt(accountId) : accountId;
+  const index = selectedAccountIds.indexOf(id);
   if (index > -1) {
     selectedAccountIds.splice(index, 1);
   } else {
-    selectedAccountIds.push(accountId);
+    selectedAccountIds.push(id);
   }
+  console.log('当前选中的账号IDs:', selectedAccountIds); // 调试日志
   updateSelectionUI();
 }
 
