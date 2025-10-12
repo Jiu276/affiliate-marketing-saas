@@ -3,7 +3,7 @@ const API_BASE = 'http://localhost:3000/api';
 let authToken = null;
 let currentUser = null;
 let platformAccounts = [];
-let selectedAccountId = null;
+let selectedAccountIds = []; // 改为数组，支持多选
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -195,42 +195,88 @@ function renderAccountsList() {
     return;
   }
 
-  container.innerHTML = platformAccounts
+  container.innerHTML = `
+    <div style="margin-bottom: 15px;">
+      <button onclick="selectAllAccounts()" class="btn-secondary">全选</button>
+      <button onclick="deselectAllAccounts()" class="btn-secondary" style="margin-left: 10px;">取消全选</button>
+    </div>
+  ` + platformAccounts
     .map(
       account => `
-    <div class="account-item">
+    <div class="account-item" data-account-id="${account.id}">
       <div class="account-info">
-        <span class="platform-badge">${account.platform}</span>
-        <strong>${account.account_name}</strong>
-        <div style="font-size: 12px; color: #999; margin-top: 5px;">
-          添加于 ${new Date(account.created_at).toLocaleDateString()}
-        </div>
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox"
+                 class="account-checkbox"
+                 value="${account.id}"
+                 onchange="toggleAccountSelection(${account.id})"
+                 style="width: 18px; height: 18px; margin-right: 12px; cursor: pointer;">
+          <div>
+            <span class="platform-badge">${account.platform}</span>
+            <strong>${account.account_name}</strong>
+            <div style="font-size: 12px; color: #999; margin-top: 5px;">
+              添加于 ${new Date(account.created_at).toLocaleDateString()}
+            </div>
+          </div>
+        </label>
       </div>
       <div class="account-actions">
-        <button onclick="selectAccount(${account.id})" class="btn-success">选择</button>
         <button onclick="deleteAccount(${account.id})" class="btn-danger">删除</button>
       </div>
     </div>
   `
     )
     .join('');
-}
-
-// 选择账号用于采集
-function selectAccount(accountId) {
-  selectedAccountId = accountId;
-  const account = platformAccounts.find(a => a.id === accountId);
 
   // 显示采集区域
   document.getElementById('collectSection').style.display = 'block';
+}
 
-  // 更新UI提示
-  document.querySelectorAll('.account-item').forEach(item => {
-    item.style.border = '1px solid #e0e0e0';
+// 切换账号选择状态
+function toggleAccountSelection(accountId) {
+  const index = selectedAccountIds.indexOf(accountId);
+  if (index > -1) {
+    selectedAccountIds.splice(index, 1);
+  } else {
+    selectedAccountIds.push(accountId);
+  }
+  updateSelectionUI();
+}
+
+// 全选账号
+function selectAllAccounts() {
+  selectedAccountIds = platformAccounts.map(a => a.id);
+  document.querySelectorAll('.account-checkbox').forEach(cb => {
+    cb.checked = true;
   });
-  event.target.closest('.account-item').style.border = '2px solid #667eea';
+  updateSelectionUI();
+}
 
-  showMessage('collectStatus', `已选择: ${account.platform} - ${account.account_name}`, 'info');
+// 取消全选
+function deselectAllAccounts() {
+  selectedAccountIds = [];
+  document.querySelectorAll('.account-checkbox').forEach(cb => {
+    cb.checked = false;
+  });
+  updateSelectionUI();
+}
+
+// 更新选择状态UI
+function updateSelectionUI() {
+  const count = selectedAccountIds.length;
+
+  if (count > 0) {
+    document.getElementById('collectSection').style.display = 'block';
+
+    const accounts = platformAccounts
+      .filter(a => selectedAccountIds.includes(a.id))
+      .map(a => `${a.platform}-${a.account_name}`)
+      .join(', ');
+
+    showMessage('collectStatus', `已选择 ${count} 个账号: ${accounts}`, 'info');
+  } else {
+    showMessage('collectStatus', '请选择至少一个平台账号', 'error');
+  }
 }
 
 // 显示添加账号弹窗
@@ -295,10 +341,17 @@ async function deleteAccount(accountId) {
 
     if (result.success) {
       alert('删除成功');
+
+      // 从已选列表中移除
+      const index = selectedAccountIds.indexOf(accountId);
+      if (index > -1) {
+        selectedAccountIds.splice(index, 1);
+      }
+
       loadPlatformAccounts();
 
-      if (selectedAccountId === accountId) {
-        selectedAccountId = null;
+      // 如果没有任何选中的账号，隐藏采集区域
+      if (selectedAccountIds.length === 0) {
         document.getElementById('collectSection').style.display = 'none';
       }
     } else {
@@ -311,12 +364,12 @@ async function deleteAccount(accountId) {
 
 // ============ 数据采集 ============
 
-// 处理数据采集
+// 处理数据采集（支持多账号）
 async function handleCollect(e) {
   e.preventDefault();
 
-  if (!selectedAccountId) {
-    showMessage('collectStatus', '请先选择一个平台账号', 'error');
+  if (selectedAccountIds.length === 0) {
+    showMessage('collectStatus', '请先选择至少一个平台账号', 'error');
     return;
   }
 
@@ -334,40 +387,101 @@ async function handleCollect(e) {
   document.getElementById('statsSection').style.display = 'none';
 
   try {
-    showMessage('collectStatus', '正在自动登录LH平台并采集数据...（这可能需要10-30秒）', 'info');
+    const totalAccounts = selectedAccountIds.length;
+    showMessage(
+      'collectStatus',
+      `正在采集 ${totalAccounts} 个账号的数据...（每个账号约需10-30秒）`,
+      'info'
+    );
 
-    const response = await fetch(`${API_BASE}/collect-orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        platformAccountId: selectedAccountId,
-        startDate,
-        endDate,
-      }),
-    });
+    // 存储所有账号的订单数据
+    const allOrders = [];
+    let successCount = 0;
+    let failCount = 0;
+    let totalOrdersCount = 0;
 
-    const result = await response.json();
+    // 循环采集每个账号
+    for (let i = 0; i < selectedAccountIds.length; i++) {
+      const accountId = selectedAccountIds[i];
+      const account = platformAccounts.find(a => a.id === accountId);
 
-    if (result.success) {
-      showMessage('collectStatus', `✅ ${result.message}`, 'success');
+      showMessage(
+        'collectStatus',
+        `[${i + 1}/${totalAccounts}] 正在采集 ${account.platform} - ${account.account_name}...`,
+        'info'
+      );
 
-      // 显示统计数据
-      if (result.data && result.data.total) {
-        displayStats(result.data.total);
+      try {
+        const response = await fetch(`${API_BASE}/collect-orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            platformAccountId: accountId,
+            startDate,
+            endDate,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.data && result.data.orders) {
+          allOrders.push(...result.data.orders);
+          totalOrdersCount += result.data.total.items || 0;
+          successCount++;
+
+          showMessage(
+            'collectStatus',
+            `[${i + 1}/${totalAccounts}] ✅ ${account.account_name} 采集成功，获取 ${result.data.total.items} 条订单`,
+            'success'
+          );
+        } else {
+          failCount++;
+          showMessage(
+            'collectStatus',
+            `[${i + 1}/${totalAccounts}] ❌ ${account.account_name} 采集失败: ${result.message}`,
+            'error'
+          );
+        }
+      } catch (error) {
+        failCount++;
+        showMessage(
+          'collectStatus',
+          `[${i + 1}/${totalAccounts}] ❌ ${account.account_name} 网络请求失败: ${error.message}`,
+          'error'
+        );
       }
 
-      // 直接用本次采集的订单数据计算商家汇总
-      if (result.data && result.data.orders) {
-        calculateAndDisplayMerchantSummary(result.data.orders);
+      // 每个账号之间延迟1秒，避免请求过快
+      if (i < selectedAccountIds.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
+    }
+
+    // 显示最终结果
+    if (successCount > 0) {
+      showMessage(
+        'collectStatus',
+        `🎉 采集完成！成功: ${successCount}个账号，失败: ${failCount}个账号，共采集 ${totalOrdersCount} 条订单`,
+        'success'
+      );
+
+      // 计算总统计数据
+      const totalStats = {
+        items: totalOrdersCount,
+        total_amount: allOrders.reduce((sum, o) => sum + parseFloat(o.amount || 0), 0).toFixed(2),
+        total_aff_ba: allOrders.reduce((sum, o) => sum + parseFloat(o.total_cmsn || 0), 0).toFixed(2),
+      };
+
+      displayStats(totalStats);
+      calculateAndDisplayMerchantSummary(allOrders);
     } else {
-      showMessage('collectStatus', result.message, 'error');
+      showMessage('collectStatus', '❌ 所有账号采集均失败，请检查账号配置或网络连接', 'error');
     }
   } catch (error) {
-    showMessage('collectStatus', '网络请求失败: ' + error.message, 'error');
+    showMessage('collectStatus', '采集过程出错: ' + error.message, 'error');
   } finally {
     submitBtn.disabled = false;
     btnText.textContent = '开始采集';
