@@ -432,11 +432,21 @@ async function handleCollect(e) {
           totalOrdersCount += parseInt(result.data.total.items) || 0;
           successCount++;
 
-          showMessage(
-            'collectStatus',
-            `[${i + 1}/${totalAccounts}] ✅ ${account.account_name} 采集成功，获取 ${result.data.total.items} 条订单`,
-            'success'
-          );
+          // 显示详细的采集统计
+          const stats = result.data.stats;
+          let statusMsg = `[${i + 1}/${totalAccounts}] ✅ ${account.account_name} - ${result.message}`;
+
+          if (stats) {
+            const details = [];
+            if (stats.new > 0) details.push(`新增${stats.new}条`);
+            if (stats.updated > 0) details.push(`更新${stats.updated}条`);
+            if (stats.skipped > 0) details.push(`跳过${stats.skipped}条`);
+            if (details.length > 0) {
+              statusMsg += ` (${details.join('，')})`;
+            }
+          }
+
+          showMessage('collectStatus', statusMsg, 'success');
         } else {
           failCount++;
           showMessage(

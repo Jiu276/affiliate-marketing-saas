@@ -431,13 +431,29 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
     if (isSuccess && response.data.payload) {
       const orders = response.data.payload.info || [];
 
-      // 保存订单到数据库
+      // 智能订单处理：去重、状态比对、更新
+      const selectStmt = db.prepare(`
+        SELECT id, status FROM orders
+        WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
+      `);
+
       const insertStmt = db.prepare(`
-        INSERT OR REPLACE INTO orders
+        INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name,
          order_amount, commission, status, order_date, raw_data)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
+
+      const updateStmt = db.prepare(`
+        UPDATE orders
+        SET status = ?, commission = ?, order_amount = ?,
+            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+
+      let newCount = 0;       // 新增订单数
+      let updatedCount = 0;   // 状态更新数
+      let skippedCount = 0;   // 跳过订单数
 
       orders.forEach(order => {
         // 字段映射（根据实际API返回的字段）
@@ -449,26 +465,67 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
         const status = order.status;
         const orderDate = order.date_ymd || order.updated_date;
 
-        insertStmt.run(
-          req.user.id,
-          platformAccountId,
-          orderId,
-          merchantId,
-          merchantName,
-          orderAmount,
-          commission,
-          status,
-          orderDate,
-          JSON.stringify(order)
-        );
+        // 查询是否存在相同订单号
+        const existingOrder = selectStmt.get(req.user.id, platformAccountId, orderId);
+
+        if (existingOrder) {
+          // 订单已存在，比对状态
+          if (existingOrder.status === status) {
+            // 状态一致，跳过
+            skippedCount++;
+          } else {
+            // 状态不一致，更新订单
+            updateStmt.run(
+              status,
+              commission,
+              orderAmount,
+              merchantName,
+              JSON.stringify(order),
+              existingOrder.id
+            );
+            updatedCount++;
+            console.log(`📝 订单 ${orderId} 状态更新: ${existingOrder.status} -> ${status}`);
+          }
+        } else {
+          // 订单不存在，插入新订单
+          insertStmt.run(
+            req.user.id,
+            platformAccountId,
+            orderId,
+            merchantId,
+            merchantName,
+            orderAmount,
+            commission,
+            status,
+            orderDate,
+            JSON.stringify(order)
+          );
+          newCount++;
+        }
       });
+
+      // 构建详细的结果消息
+      let message = `采集完成：`;
+      const details = [];
+      if (newCount > 0) details.push(`新增 ${newCount} 条`);
+      if (updatedCount > 0) details.push(`更新 ${updatedCount} 条`);
+      if (skippedCount > 0) details.push(`跳过 ${skippedCount} 条`);
+      message += details.join('，');
+
+      console.log(`✅ ${message}`);
 
       res.json({
         success: true,
-        message: `成功采集 ${orders.length} 条订单`,
+        message: message,
         data: {
           total: response.data.payload.total,
           orders: orders,
+          stats: {
+            new: newCount,
+            updated: updatedCount,
+            skipped: skippedCount,
+            total: orders.length
+          }
         },
       });
     } else {
