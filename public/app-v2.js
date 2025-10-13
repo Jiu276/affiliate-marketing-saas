@@ -412,7 +412,8 @@ async function handleCollect(e) {
     const allOrders = [];
     let successCount = 0;
     let failCount = 0;
-    let totalOrdersCount = 0;
+    let totalOrdersCount = 0;  // 实际入库的订单数（新增+更新）
+    let totalProcessedCount = 0;  // 总处理数（新增+更新+跳过）
 
     // 循环采集每个账号
     for (let i = 0; i < selectedAccountIds.length; i++) {
@@ -443,11 +444,17 @@ async function handleCollect(e) {
 
         if (result.success && result.data && result.data.orders) {
           allOrders.push(...result.data.orders);
-          totalOrdersCount += parseInt(result.data.total.items) || 0;
+
+          // 计算实际入库数（新增+更新）和总处理数（新增+更新+跳过）
+          const stats = result.data.stats || {};
+          const savedCount = (stats.new || 0) + (stats.updated || 0);  // 实际入库数
+          const processedCount = stats.total || result.data.orders.length || 0;  // 总处理数
+
+          totalOrdersCount += savedCount;
+          totalProcessedCount += processedCount;
           successCount++;
 
           // 显示详细的采集统计
-          const stats = result.data.stats;
           let statusMsg = `[${i + 1}/${totalAccounts}] ✅ ${account.account_name} - ${result.message}`;
 
           if (stats) {
@@ -486,20 +493,20 @@ async function handleCollect(e) {
 
     // 显示最终结果
     if (successCount > 0) {
-      showMessage(
-        'collectStatus',
-        `🎉 采集完成！成功: ${successCount}个账号，失败: ${failCount}个账号，共采集 ${totalOrdersCount} 条订单`,
-        'success'
-      );
+      // 构建详细的采集结果消息
+      let finalMsg = `🎉 采集完成！成功: ${successCount}个账号，失败: ${failCount}个账号`;
+      if (totalProcessedCount > totalOrdersCount) {
+        // 有跳过的订单，显示更详细的信息
+        const skippedCount = totalProcessedCount - totalOrdersCount;
+        finalMsg += `，实际入库 ${totalOrdersCount} 条（查询到 ${totalProcessedCount} 条，跳过 ${skippedCount} 条重复订单）`;
+      } else {
+        finalMsg += `，共采集 ${totalOrdersCount} 条订单`;
+      }
 
-      // 计算总统计数据
-      const totalStats = {
-        items: totalOrdersCount,
-        total_amount: allOrders.reduce((sum, o) => sum + parseFloat(o.amount || 0), 0).toFixed(2),
-        total_aff_ba: allOrders.reduce((sum, o) => sum + parseFloat(o.total_cmsn || 0), 0).toFixed(2),
-      };
+      showMessage('collectStatus', finalMsg, 'success');
 
-      displayStats(totalStats);
+      // 从数据库查询该日期范围内的统计数据（而不是仅统计本次采集的数据）
+      await fetchAndDisplayStats(startDate, endDate);
       calculateAndDisplayMerchantSummary(allOrders);
     } else {
       showMessage('collectStatus', '❌ 所有账号采集均失败，请检查账号配置或网络连接', 'error');
@@ -513,7 +520,62 @@ async function handleCollect(e) {
   }
 }
 
-// 显示统计数据
+// 从数据库查询并显示统计数据
+async function fetchAndDisplayStats(startDate, endDate) {
+  try {
+    // 如果选中了多个账号，需要分别查询然后累加
+    let totalOrders = 0;
+    let totalAmount = 0;
+    let totalCommission = 0;
+
+    if (selectedAccountIds.length === 0) {
+      // 没有选中账号，查询所有订单
+      const params = new URLSearchParams({ startDate, endDate });
+      const response = await fetch(`${API_BASE}/stats?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        totalOrders = result.data.total_orders || 0;
+        totalAmount = result.data.total_amount || 0;
+        totalCommission = result.data.total_commission || 0;
+      }
+    } else {
+      // 为每个选中的账号分别查询统计数据，然后累加
+      for (const accountId of selectedAccountIds) {
+        const params = new URLSearchParams({
+          startDate,
+          endDate,
+          platformAccountId: accountId
+        });
+
+        const response = await fetch(`${API_BASE}/stats?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          totalOrders += result.data.total_orders || 0;
+          totalAmount += result.data.total_amount || 0;
+          totalCommission += result.data.total_commission || 0;
+        }
+      }
+    }
+
+    // 显示统计数据
+    document.getElementById('totalOrders').textContent = totalOrders;
+    document.getElementById('totalAmount').textContent = '$' + totalAmount.toFixed(2);
+    document.getElementById('totalCommission').textContent = '$' + totalCommission.toFixed(2);
+
+    document.getElementById('statsSection').style.display = 'block';
+  } catch (error) {
+    console.error('获取统计数据失败:', error);
+  }
+}
+
+// 显示统计数据（保留用于兼容性）
 function displayStats(total) {
   document.getElementById('totalOrders').textContent = total.items || '0';
   document.getElementById('totalAmount').textContent = '$' + (total.total_amount || '0');
@@ -528,9 +590,29 @@ async function calculateAndDisplayMerchantSummary(orders) {
   const startDate = document.getElementById('startDate').value;
   const endDate = document.getElementById('endDate').value;
 
+  // 构建查询参数：只包含选中的账号
+  const params = new URLSearchParams({
+    startDate,
+    endDate
+  });
+
+  // 如果选中了账号，添加平台账号ID过滤（只查询选中账号的数据）
+  if (selectedAccountIds.length > 0) {
+    // 注意：后端目前只支持单个platformAccountId参数
+    // 如果选中多个账号，可以改为：
+    // 1. 后端支持逗号分隔的多个ID：platformAccountId=1,6
+    // 2. 或者后端支持数组参数：platformAccountId[]=1&platformAccountId[]=6
+    // 3. 或者前端只传第一个（当前方案）
+
+    // 方案1：只传第一个选中的账号ID
+    params.append('platformAccountId', selectedAccountIds[0]);
+
+    // TODO: 未来如果需要支持多账号汇总，需要修改后端API
+  }
+
   try {
     // 调用后端API获取商家汇总（包含广告数据）
-    const response = await fetch(`${API_BASE}/merchant-summary?startDate=${startDate}&endDate=${endDate}`, {
+    const response = await fetch(`${API_BASE}/merchant-summary?${params.toString()}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
 

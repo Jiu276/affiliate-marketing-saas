@@ -375,10 +375,108 @@ async function getLHToken(platformAccountId) {
   return loginResult.token;
 }
 
+// ============ PartnerMatic平台自动登录 ============
+
+/**
+ * 自动登录PM平台
+ */
+async function autoLoginPM(accountName, accountPassword) {
+  console.log('🔐 开始登录PartnerMatic...');
+
+  try {
+    const response = await axios.post(
+      'https://api.partnermatic.com/auth/sign_in',
+      {
+        appId: 32,
+        req: {
+          header: {
+            token: ''
+          },
+          fields: [],
+          attributes: {},
+          filter: {
+            platform_code: '',
+            account: accountName,
+            password: accountPassword
+          }
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (response.data.code === '0' && response.data.data && response.data.data.auth_token) {
+      console.log('✅ PM平台自动登录成功');
+      return {
+        success: true,
+        token: response.data.data.auth_token,
+        uid: response.data.data.uid,
+        uname: response.data.data.uname,
+        expireTime: response.data.data.expire_time,
+      };
+    } else {
+      console.log(`❌ PM登录失败: ${response.data.message}`);
+      throw new Error(`PM登录失败: ${response.data.message}`);
+    }
+  } catch (error) {
+    console.error('❌ PM登录请求失败:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * 获取或刷新PM平台token
+ */
+async function getPMToken(platformAccountId) {
+  // 查询缓存的token
+  const tokenRecord = db
+    .prepare(
+      `
+    SELECT token, expire_time FROM platform_tokens
+    WHERE platform_account_id = ?
+    ORDER BY created_at DESC LIMIT 1
+  `
+    )
+    .get(platformAccountId);
+
+  // 检查token是否有效
+  if (tokenRecord && tokenRecord.expire_time) {
+    const expireTime = new Date(tokenRecord.expire_time);
+    if (expireTime > new Date()) {
+      console.log('✅ 使用缓存的PM token');
+      return tokenRecord.token;
+    }
+  }
+
+  // Token过期或不存在，重新登录
+  console.log('🔄 Token已过期，开始自动登录PM平台...');
+
+  const account = db
+    .prepare('SELECT account_name, account_password FROM platform_accounts WHERE id = ?')
+    .get(platformAccountId);
+
+  if (!account) {
+    throw new Error('平台账号不存在');
+  }
+
+  const accountPassword = decryptPassword(account.account_password);
+  const loginResult = await autoLoginPM(account.account_name, accountPassword);
+
+  // 保存新token
+  db.prepare(
+    'INSERT INTO platform_tokens (platform_account_id, token, expire_time) VALUES (?, ?, ?)'
+  ).run(platformAccountId, loginResult.token, loginResult.expireTime);
+
+  return loginResult.token;
+}
+
 // ============ 数据采集API（改造版）============
 
 /**
- * API: 采集订单数据
+ * API: 采集订单数据（支持LH和PM平台）
  * POST /api/collect-orders
  */
 app.post('/api/collect-orders', authenticateToken, async (req, res) => {
@@ -398,8 +496,27 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
       return res.json({ success: false, message: '平台账号不存在或无权访问' });
     }
 
+    // 根据平台类型调用不同的采集方法
+    if (account.platform === 'linkhaitao') {
+      return await collectLHOrders(req, res, account, startDate, endDate);
+    } else if (account.platform === 'partnermatic') {
+      return await collectPMOrders(req, res, account, startDate, endDate);
+    } else {
+      return res.json({ success: false, message: `不支持的平台: ${account.platform}` });
+    }
+  } catch (error) {
+    console.error('采集订单错误:', error);
+    res.json({ success: false, message: '采集失败: ' + error.message });
+  }
+});
+
+/**
+ * 采集LinkHaitao订单数据
+ */
+async function collectLHOrders(req, res, account, startDate, endDate) {
+  try {
     // 获取LH token（自动登录）
-    const lhToken = await getLHToken(platformAccountId);
+    const lhToken = await getLHToken(account.id);
 
     // 获取订单数据
     const exportFlag = '0';
@@ -466,7 +583,7 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
         const orderDate = order.date_ymd || order.updated_date;
 
         // 查询是否存在相同订单号
-        const existingOrder = selectStmt.get(req.user.id, platformAccountId, orderId);
+        const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
 
         if (existingOrder) {
           // 订单已存在，比对状态
@@ -490,7 +607,7 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
           // 订单不存在，插入新订单
           insertStmt.run(
             req.user.id,
-            platformAccountId,
+            account.id,  // 修复: 使用account.id而不是未定义的platformAccountId
             orderId,
             merchantId,
             merchantName,
@@ -535,10 +652,189 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('采集订单错误:', error);
+    console.error('采集LH订单错误:', error);
     res.json({ success: false, message: '采集失败: ' + error.message });
   }
-});
+}
+
+/**
+ * 采集PartnerMatic订单数据
+ */
+async function collectPMOrders(req, res, account, startDate, endDate) {
+  try {
+    // 获取PM token（自动登录）
+    const pmToken = await getPMToken(account.id);
+
+    // 获取订单数据
+    const response = await axios.post(
+      'https://api.partnermatic.com/report/transactions',
+      {
+        appId: 32,
+        req: {
+          header: {
+            token: pmToken
+          },
+          fields: [],
+          attributes: {},
+          filter: {
+            start_date: startDate,
+            end_date: endDate,
+            date_type: '0',
+            medium_id: '',
+            brand_name: '',
+            tag: '',
+            order_id: '',
+            product_id: '',
+            settlement_id: '',
+            payment_id: '',
+            sign_id: '',
+            status: '',
+            sort_field: 'transaction_date',
+            sort_order: 'desc',
+            page_num: 1,
+            page_size: 1000,
+            export: 0
+          },
+          page: {
+            number: 1,
+            size: 1000
+          }
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const isSuccess = response.data.code === '0' && response.data.data;
+
+    if (isSuccess) {
+      const orders = response.data.data.list || [];  // PM API返回的是list字段
+
+      // 智能订单处理：去重、状态比对、更新
+      const selectStmt = db.prepare(`
+        SELECT id, status FROM orders
+        WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
+      `);
+
+      const insertStmt = db.prepare(`
+        INSERT INTO orders
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+         order_amount, commission, status, order_date, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const updateStmt = db.prepare(`
+        UPDATE orders
+        SET status = ?, commission = ?, order_amount = ?,
+            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+
+      let newCount = 0;       // 新增订单数
+      let updatedCount = 0;   // 状态更新数
+      let skippedCount = 0;   // 跳过订单数
+
+      orders.forEach(order => {
+        // 字段映射（根据PM API返回的字段）
+        const orderId = order.orderId;  // PM返回的订单号
+        const merchantId = order.buStoreId ? String(order.buStoreId) : order.mcid;  // PM平台必须使用buStoreId作为商家ID
+        const merchantName = order.buStoreName;
+        const orderAmount = parseFloat(order.amount || 0);
+        const commission = parseFloat(order.cashback || 0);
+
+        // 状态映射：PENDING/CANCELED/APPROVED
+        let status = 'Pending';
+        if (order.status === 'APPROVED') status = 'Approved';
+        else if (order.status === 'CANCELED') status = 'Rejected';
+        else status = 'Pending';
+
+        const orderDate = order.transactionDate ? order.transactionDate.split(' ')[0] : '';
+
+        // 查询是否存在相同订单号
+        const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
+
+        if (existingOrder) {
+          // 订单已存在，比对状态
+          if (existingOrder.status === status) {
+            // 状态一致，跳过
+            skippedCount++;
+          } else {
+            // 状态不一致，更新订单
+            updateStmt.run(
+              status,
+              commission,
+              orderAmount,
+              merchantName,
+              JSON.stringify(order),
+              existingOrder.id
+            );
+            updatedCount++;
+            console.log(`📝 PM订单 ${orderId} 状态更新: ${existingOrder.status} -> ${status}`);
+          }
+        } else {
+          // 订单不存在，插入新订单
+          insertStmt.run(
+            req.user.id,
+            account.id,
+            orderId,
+            merchantId,
+            merchantName,
+            orderAmount,
+            commission,
+            status,
+            orderDate,
+            JSON.stringify(order)
+          );
+          newCount++;
+        }
+      });
+
+      // 构建详细的结果消息
+      let message = `采集完成：`;
+      const details = [];
+      if (newCount > 0) details.push(`新增 ${newCount} 条`);
+      if (updatedCount > 0) details.push(`更新 ${updatedCount} 条`);
+      if (skippedCount > 0) details.push(`跳过 ${skippedCount} 条`);
+      message += details.join('，');
+
+      console.log(`✅ PM ${message}`);
+
+      res.json({
+        success: true,
+        message: message,
+        data: {
+          total: response.data.data.pagination || { total: orders.length },
+          orders: orders.map(o => ({
+            id: o.orderId,
+            mcid: o.mcid,
+            sitename: o.buStoreName,
+            amount: o.amount,
+            total_cmsn: o.cashback,
+            status: o.status,
+            date_ymd: o.transactionDate ? o.transactionDate.split(' ')[0] : ''
+          })),
+          stats: {
+            new: newCount,
+            updated: updatedCount,
+            skipped: skippedCount,
+            total: orders.length
+          }
+        },
+      });
+    } else {
+      res.json({
+        success: false,
+        message: response.data.message || 'PM数据获取失败',
+      });
+    }
+  } catch (error) {
+    console.error('采集PM订单错误:', error);
+    res.json({ success: false, message: '采集失败: ' + error.message });
+  }
+}
 
 /**
  * API: 获取历史订单
@@ -663,6 +959,10 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
     orderQuery += ' GROUP BY merchant_id, merchant_name ORDER BY total_commission DESC';
 
     const orderSummary = db.prepare(orderQuery).all(...orderParams);
+    console.log(`📊 订单汇总查询结果: ${orderSummary.length} 个商家`);
+    if (orderSummary.length > 0) {
+      console.log('样例商家:', orderSummary[0]);
+    }
 
     // 第二步：获取广告数据汇总（按merchant_id分组）
     let adsQuery = `
@@ -691,6 +991,10 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
     adsQuery += ' GROUP BY merchant_id';
 
     const adsSummary = db.prepare(adsQuery).all(...adsParams);
+    console.log(`📊 广告数据查询结果: ${adsSummary.length} 个商家`);
+    if (adsSummary.length > 0) {
+      console.log('样例广告商家:', adsSummary[0]);
+    }
 
     // 第三步：合并数据
     const adsMap = new Map();
@@ -706,25 +1010,28 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       }
     });
 
-    // 合并订单汇总和广告数据
-    const mergedSummary = orderSummary.map(order => {
-      const adsData = adsMap.get(order.merchant_id) || {
-        campaign_names: '',
-        total_budget: 0,
-        total_impressions: 0,
-        total_clicks: 0,
-        total_cost: 0
-      };
+    // 合并订单汇总和广告数据，只保留有广告数据的商家
+    const mergedSummary = orderSummary
+      .map(order => {
+        const adsData = adsMap.get(order.merchant_id);
 
-      return {
-        ...order,
-        campaign_names: adsData.campaign_names,
-        total_budget: adsData.total_budget,
-        total_impressions: adsData.total_impressions,
-        total_clicks: adsData.total_clicks,
-        total_cost: adsData.total_cost
-      };
-    });
+        // 如果该商家没有广告数据，返回null（稍后过滤掉）
+        if (!adsData || !adsData.campaign_names) {
+          return null;
+        }
+
+        return {
+          ...order,
+          campaign_names: adsData.campaign_names,
+          total_budget: adsData.total_budget,
+          total_impressions: adsData.total_impressions,
+          total_clicks: adsData.total_clicks,
+          total_cost: adsData.total_cost
+        };
+      })
+      .filter(item => item !== null); // 过滤掉没有广告数据的商家
+
+    console.log(`📊 最终合并结果: ${mergedSummary.length} 个商家（有广告数据）`);
 
     res.json({ success: true, data: mergedSummary });
   } catch (error) {
@@ -747,11 +1054,12 @@ function extractSheetId(url) {
  * 从广告系列名提取联盟名称和商家编号
  * 格式：596-pm1-Champion-US-0826-71017
  * 联盟名称：第1个-和第2个-之间 → pm1
- * 商家编号：最后一个-之后 → 71017
+ * 商家编号：最后一个-之后 → 71017（数字ID）
+ * 同时生成商家标识符：基于商家名称的标准化字符串（用于匹配字符串格式的merchant_id）
  */
 function extractCampaignInfo(campaignName) {
   if (!campaignName) {
-    return { affiliateName: '', merchantId: '' };
+    return { affiliateName: '', merchantId: '', merchantSlug: '' };
   }
 
   const parts = campaignName.split('-');
@@ -759,10 +1067,23 @@ function extractCampaignInfo(campaignName) {
   // 联盟名称：第2个元素（索引1）
   const affiliateName = parts.length >= 2 ? parts[1] : '';
 
-  // 商家编号：最后一个元素
+  // 商家编号：最后一个元素（数字ID）
   const merchantId = parts.length > 0 ? parts[parts.length - 1] : '';
 
-  return { affiliateName, merchantId };
+  // 商家名称：第3个元素到倒数第3个元素之间（去掉：序号、联盟、国家、日期、ID）
+  // 例如：596-pm1-Champion-US-0826-71017 -> Champion
+  let merchantName = '';
+  if (parts.length >= 5) {
+    // 从索引2开始，到倒数第3个（不包含国家、日期、ID）
+    const nameEnd = parts.length - 3;
+    merchantName = parts.slice(2, nameEnd).join('-');
+  }
+
+  // 生成标准化的商家标识符：小写+移除空格和特殊字符
+  // 例如："Champion" -> "champion", "Lily and Me Clothing" -> "lilyandmeclothing"
+  const merchantSlug = merchantName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return { affiliateName, merchantId, merchantSlug };
 }
 
 /**
