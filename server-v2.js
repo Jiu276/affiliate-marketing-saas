@@ -1156,12 +1156,22 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
         let orderDate = '';
         if (order.order_time) {
           if (typeof order.order_time === 'number') {
+            // 数字类型：秒级时间戳
             const timestamp = order.order_time * 1000;
             orderDate = new Date(timestamp).toISOString().split('T')[0];
           } else if (typeof order.order_time === 'string') {
-            orderDate = order.order_time.split(' ')[0];
+            // 字符串类型：可能是时间戳字符串或日期字符串
+            const numericTimestamp = parseInt(order.order_time);
+            if (!isNaN(numericTimestamp) && order.order_time.length === 10) {
+              // 10位数字字符串，是秒级时间戳
+              const timestamp = numericTimestamp * 1000;
+              orderDate = new Date(timestamp).toISOString().split('T')[0];
+            } else {
+              // 日期字符串格式
+              orderDate = order.order_time.split(' ')[0];
+            }
           }
-        } else if (order.validation_date) {
+        } else if (order.validation_date && order.validation_date !== 'null') {
           orderDate = typeof order.validation_date === 'string' ? order.validation_date.split(' ')[0] : '';
         }
 
