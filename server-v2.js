@@ -146,12 +146,20 @@ app.post('/api/platform-accounts', authenticateToken, (req, res) => {
       return res.json({ success: false, message: '缺少必要参数' });
     }
 
-    // LinkBux和Rewardoo平台必须提供apiToken，其他平台必须提供密码
-    if (platform === 'linkbux' || platform === 'rewardoo') {
+    // LB、RW、LH、PM平台必须使用API Token
+    if (platform === 'linkbux' || platform === 'rewardoo' || platform === 'linkhaitao' || platform === 'partnermatic') {
       if (!apiToken) {
-        return res.json({ success: false, message: `${platform === 'linkbux' ? 'LinkBux' : 'Rewardoo'}平台需要提供API Token` });
+        const platformNames = {
+          'linkbux': 'LinkBux',
+          'rewardoo': 'Rewardoo',
+          'linkhaitao': 'LinkHaitao',
+          'partnermatic': 'PartnerMatic'
+        };
+        const platformName = platformNames[platform] || platform;
+        return res.json({ success: false, message: `${platformName}平台需要提供API Token` });
       }
     } else {
+      // 其他平台必须提供密码
       if (!accountPassword) {
         return res.json({ success: false, message: '请提供账号密码' });
       }
@@ -386,106 +394,8 @@ async function getLHToken(platformAccountId) {
   return loginResult.token;
 }
 
-// ============ PartnerMatic平台自动登录 ============
-
-/**
- * 自动登录PM平台
- */
-async function autoLoginPM(accountName, accountPassword) {
-  console.log('🔐 开始登录PartnerMatic...');
-
-  try {
-    const response = await axios.post(
-      'https://api.partnermatic.com/auth/sign_in',
-      {
-        appId: 32,
-        req: {
-          header: {
-            token: ''
-          },
-          fields: [],
-          attributes: {},
-          filter: {
-            platform_code: '',
-            account: accountName,
-            password: accountPassword
-          }
-        }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    if (response.data.code === '0' && response.data.data && response.data.data.auth_token) {
-      console.log('✅ PM平台自动登录成功');
-      return {
-        success: true,
-        token: response.data.data.auth_token,
-        uid: response.data.data.uid,
-        uname: response.data.data.uname,
-        expireTime: response.data.data.expire_time,
-      };
-    } else {
-      console.log(`❌ PM登录失败: ${response.data.message}`);
-      throw new Error(`PM登录失败: ${response.data.message}`);
-    }
-  } catch (error) {
-    console.error('❌ PM登录请求失败:', error.message);
-    throw error;
-  }
-}
-
-/**
- * 获取或刷新PM平台token
- */
-async function getPMToken(platformAccountId) {
-  // 查询缓存的token
-  const tokenRecord = db
-    .prepare(
-      `
-    SELECT token, expire_time FROM platform_tokens
-    WHERE platform_account_id = ?
-    ORDER BY created_at DESC LIMIT 1
-  `
-    )
-    .get(platformAccountId);
-
-  // 检查token是否有效
-  if (tokenRecord && tokenRecord.expire_time) {
-    const expireTime = new Date(tokenRecord.expire_time);
-    if (expireTime > new Date()) {
-      console.log('✅ 使用缓存的PM token');
-      return tokenRecord.token;
-    }
-  }
-
-  // Token过期或不存在，重新登录
-  console.log('🔄 Token已过期，开始自动登录PM平台...');
-
-  const account = db
-    .prepare('SELECT account_name, account_password FROM platform_accounts WHERE id = ?')
-    .get(platformAccountId);
-
-  if (!account) {
-    throw new Error('平台账号不存在');
-  }
-
-  const accountPassword = decryptPassword(account.account_password);
-  const loginResult = await autoLoginPM(account.account_name, accountPassword);
-
-  // 保存新token
-  db.prepare(
-    'INSERT INTO platform_tokens (platform_account_id, token, expire_time) VALUES (?, ?, ?)'
-  ).run(platformAccountId, loginResult.token, loginResult.expireTime);
-
-  return loginResult.token;
-}
-
-// ============ LinkBux平台API Token管理 ============
-// LinkBux使用固定API Token，不需要登录，直接从账号配置中读取
+// ============ 所有平台现在都使用API Token ============
+// LH、PM、LB、RW平台使用固定API Token，不需要登录，直接从账号配置中读取
 
 // ============ 数据采集API（改造版）============
 
@@ -529,103 +439,130 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
 });
 
 /**
- * 采集LinkHaitao订单数据
+ * 采集LinkHaitao订单数据（支持API Token和模拟登录两种方式）
  */
 async function collectLHOrders(req, res, account, startDate, endDate) {
   try {
-    // 获取LH token（自动登录）
-    const lhToken = await getLHToken(account.id);
+    let response;
+    let orders = [];
 
-    // 获取订单数据
-    const exportFlag = '0';
-    const page = 1;
-    const pageSize = 100;
-    const signData = `${startDate}${endDate}${page}${pageSize}${exportFlag}`;
-    const sign = generateSign(signData);
+    // ========== 方式1：使用API Token（新方式，优先）==========
+    if (account.api_token) {
+      console.log('📥 使用LH API Token方式采集订单...');
 
-    const response = await axios.post(
-      'https://www.linkhaitao.com/api2.php?c=report&a=transactionDetail',
-      new URLSearchParams({
-        sign: sign,
-        start_date: startDate,
+      // 构建GET请求URL
+      const params = new URLSearchParams({
+        token: account.api_token,
+        begin_date: startDate,
         end_date: endDate,
-        page: page.toString(),
-        page_size: pageSize.toString(),
-        export: exportFlag,
-      }),
-      {
-        headers: {
-          'Lh-Authorization': lhToken,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        page: '1',
+        per_page: '4000'  // 最大4000条/页
+      });
+
+      const apiUrl = `https://www.linkhaitao.com/api.php?mod=medium&op=cashback2&${params.toString()}`;
+
+      response = await axios.get(apiUrl);
+
+      // LH新API响应格式：
+      // 成功: { status: { code: 0, msg: "success" }, data: { list: [...] } }
+      const isSuccess = response.data.status && response.data.status.code === 0;
+
+      if (isSuccess && response.data.data && response.data.data.list) {
+        orders = response.data.data.list;
+        console.log(`✅ LH API Token方式：获取到 ${orders.length} 条订单`);
+      } else {
+        const errorMsg = (response.data.status && response.data.status.msg) || '数据获取失败';
+        return res.json({
+          success: false,
+          message: `LH API错误: ${errorMsg}`
+        });
       }
-    );
+    }
+    // ========== 方式2：使用模拟登录（旧方式，兼容）==========
+    else {
+      console.log('📥 使用LH模拟登录方式采集订单...');
 
-    const isSuccess = response.data.code === '0200' || response.data.msg === '成功';
+      // 获取LH token（自动登录）
+      const lhToken = await getLHToken(account.id);
 
-    if (isSuccess && response.data.payload) {
-      const orders = response.data.payload.info || [];
+      // 获取订单数据
+      const exportFlag = '0';
+      const page = 1;
+      const pageSize = 100;
+      const signData = `${startDate}${endDate}${page}${pageSize}${exportFlag}`;
+      const sign = generateSign(signData);
 
-      // 智能订单处理：去重、状态比对、更新
-      const selectStmt = db.prepare(`
-        SELECT id, status FROM orders
-        WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
-      `);
+      response = await axios.post(
+        'https://www.linkhaitao.com/api2.php?c=report&a=transactionDetail',
+        new URLSearchParams({
+          sign: sign,
+          start_date: startDate,
+          end_date: endDate,
+          page: page.toString(),
+          page_size: pageSize.toString(),
+          export: exportFlag,
+        }),
+        {
+          headers: {
+            'Lh-Authorization': lhToken,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
 
-      const insertStmt = db.prepare(`
-        INSERT INTO orders
-        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
-         order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      const isSuccess = response.data.code === '0200' || response.data.msg === '成功';
 
-      const updateStmt = db.prepare(`
-        UPDATE orders
-        SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, raw_data = ?
-        WHERE id = ?
-      `);
+      if (isSuccess && response.data.payload) {
+        orders = response.data.payload.info || [];
+        console.log(`✅ LH模拟登录方式：获取到 ${orders.length} 条订单`);
+      } else {
+        return res.json({
+          success: false,
+          message: response.data.msg || '数据获取失败',
+        });
+      }
+    }
 
-      let newCount = 0;       // 新增订单数
-      let updatedCount = 0;   // 状态更新数
-      let skippedCount = 0;   // 跳过订单数
+    // ========== 统一处理订单数据入库 ==========
+    if (orders.length > 0) {
+
+      // ========== 第1步：预处理订单数据，累加同一订单号的多个商品 ==========
+      const orderMap = new Map();  // 按order_id分组累加金额
 
       orders.forEach(order => {
-        // 字段映射（根据实际API返回的字段）
-        const orderId = order.id;  // LH返回的唯一ID
-        const merchantId = order.mcid;
-        const merchantName = order.sitename;
-        const orderAmount = parseFloat(order.amount || 0);
-        const commission = parseFloat(order.total_cmsn || 0);
-        const status = order.status;
-        const orderDate = order.date_ymd || order.updated_date;
+        // 字段映射（根据API方式不同，字段名也不同）
+        let orderId, merchantId, merchantName, orderAmount, commission, status, orderDate;
 
-        // 查询是否存在相同订单号
-        const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
-
-        if (existingOrder) {
-          // 订单已存在，比对状态
-          if (existingOrder.status === status) {
-            // 状态一致，跳过
-            skippedCount++;
-          } else {
-            // 状态不一致，更新订单
-            updateStmt.run(
-              status,
-              commission,
-              orderAmount,
-              merchantName,
-              JSON.stringify(order),
-              existingOrder.id
-            );
-            updatedCount++;
-            console.log(`📝 订单 ${orderId} 状态更新: ${existingOrder.status} -> ${status}`);
-          }
+        if (account.api_token) {
+          // 新API格式字段映射
+          orderId = order.order_id || order.sign_id;  // 订单号
+          merchantId = order.m_id;  // 商家ID（重要：使用m_id而不是mcid）
+          merchantName = order.advertiser_name;  // 商家名称
+          orderAmount = parseFloat(order.sale_amount || 0);  // 订单金额
+          commission = parseFloat(order.cashback || 0);  // 佣金
+          status = order.status;  // 订单状态（expired/pending/approved等）
+          orderDate = order.order_time ? order.order_time.split(' ')[0] : '';  // 订单日期
         } else {
-          // 订单不存在，插入新订单
-          insertStmt.run(
-            req.user.id,
-            account.id,  // 修复: 使用account.id而不是未定义的platformAccountId
+          // 旧API格式字段映射（模拟登录方式）
+          orderId = order.id;
+          merchantId = order.mcid;
+          merchantName = order.sitename;
+          orderAmount = parseFloat(order.amount || 0);
+          commission = parseFloat(order.total_cmsn || 0);
+          status = order.status;
+          orderDate = order.date_ymd || order.updated_date;
+        }
+
+        // 如果订单已存在于Map中，累加金额和佣金
+        if (orderMap.has(orderId)) {
+          const existingData = orderMap.get(orderId);
+          existingData.orderAmount += orderAmount;
+          existingData.commission += commission;
+          // 保留最新的原始数据
+          existingData.rawData = order;
+        } else {
+          // 第一次遇到该订单号，创建记录
+          orderMap.set(orderId, {
             orderId,
             merchantId,
             merchantName,
@@ -633,107 +570,16 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
             commission,
             status,
             orderDate,
-            JSON.stringify(order)
-          );
-          newCount++;
+            rawData: order
+          });
         }
       });
 
-      // 构建详细的结果消息
-      let message = `采集完成：`;
-      const details = [];
-      if (newCount > 0) details.push(`新增 ${newCount} 条`);
-      if (updatedCount > 0) details.push(`更新 ${updatedCount} 条`);
-      if (skippedCount > 0) details.push(`跳过 ${skippedCount} 条`);
-      message += details.join('，');
+      console.log(`📊 LH API返回 ${orders.length} 条商品数据，合并后得到 ${orderMap.size} 个订单`);
 
-      console.log(`✅ ${message}`);
-
-      res.json({
-        success: true,
-        message: message,
-        data: {
-          total: response.data.payload.total,
-          orders: orders,
-          stats: {
-            new: newCount,
-            updated: updatedCount,
-            skipped: skippedCount,
-            total: orders.length
-          }
-        },
-      });
-    } else {
-      res.json({
-        success: false,
-        message: response.data.msg || '数据获取失败',
-      });
-    }
-  } catch (error) {
-    console.error('采集LH订单错误:', error);
-    res.json({ success: false, message: '采集失败: ' + error.message });
-  }
-}
-
-/**
- * 采集PartnerMatic订单数据
- */
-async function collectPMOrders(req, res, account, startDate, endDate) {
-  try {
-    // 获取PM token（自动登录）
-    const pmToken = await getPMToken(account.id);
-
-    // 获取订单数据
-    const response = await axios.post(
-      'https://api.partnermatic.com/report/transactions',
-      {
-        appId: 32,
-        req: {
-          header: {
-            token: pmToken
-          },
-          fields: [],
-          attributes: {},
-          filter: {
-            start_date: startDate,
-            end_date: endDate,
-            date_type: '0',
-            medium_id: '',
-            brand_name: '',
-            tag: '',
-            order_id: '',
-            product_id: '',
-            settlement_id: '',
-            payment_id: '',
-            sign_id: '',
-            status: '',
-            sort_field: 'transaction_date',
-            sort_order: 'desc',
-            page_num: 1,
-            page_size: 1000,
-            export: 0
-          },
-          page: {
-            number: 1,
-            size: 1000
-          }
-        }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const isSuccess = response.data.code === '0' && response.data.data;
-
-    if (isSuccess) {
-      const orders = response.data.data.list || [];  // PM API返回的是list字段
-
-      // 智能订单处理：去重、状态比对、更新
+      // ========== 第2步：将合并后的订单数据入库 ==========
       const selectStmt = db.prepare(`
-        SELECT id, status FROM orders
+        SELECT id, status, order_amount, commission FROM orders
         WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
       `);
 
@@ -755,42 +601,38 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       let updatedCount = 0;   // 状态更新数
       let skippedCount = 0;   // 跳过订单数
 
-      orders.forEach(order => {
-        // 字段映射（根据PM API返回的字段）
-        const orderId = order.orderId;  // PM返回的订单号
-        const merchantId = order.buStoreId ? String(order.buStoreId) : order.mcid;  // PM平台必须使用buStoreId作为商家ID
-        const merchantName = order.buStoreName;
-        const orderAmount = parseFloat(order.amount || 0);
-        const commission = parseFloat(order.cashback || 0);
-
-        // 状态映射：PENDING/CANCELED/APPROVED
-        let status = 'Pending';
-        if (order.status === 'APPROVED') status = 'Approved';
-        else if (order.status === 'CANCELED') status = 'Rejected';
-        else status = 'Pending';
-
-        const orderDate = order.transactionDate ? order.transactionDate.split(' ')[0] : '';
+      orderMap.forEach(orderData => {
+        // 直接使用聚合后的数据
+        const orderId = orderData.orderId;
+        const merchantId = orderData.merchantId;
+        const merchantName = orderData.merchantName;
+        const orderAmount = orderData.orderAmount;  // 已累加的金额
+        const commission = orderData.commission;    // 已累加的佣金
+        const status = orderData.status;
+        const orderDate = orderData.orderDate;
 
         // 查询是否存在相同订单号
         const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
 
         if (existingOrder) {
-          // 订单已存在，比对状态
-          if (existingOrder.status === status) {
-            // 状态一致，跳过
-            skippedCount++;
-          } else {
-            // 状态不一致，更新订单
+          // 订单已存在，比对状态和金额
+          if (existingOrder.status !== status ||
+              Math.abs(existingOrder.order_amount - orderAmount) > 0.01 ||
+              Math.abs(existingOrder.commission - commission) > 0.01) {
+            // 状态或金额不一致，更新订单
             updateStmt.run(
               status,
               commission,
               orderAmount,
               merchantName,
-              JSON.stringify(order),
+              JSON.stringify(orderData.rawData),
               existingOrder.id
             );
             updatedCount++;
-            console.log(`📝 PM订单 ${orderId} 状态更新: ${existingOrder.status} -> ${status}`);
+            console.log(`📝 LH订单 ${orderId} 更新: 金额${existingOrder.order_amount}→${orderAmount}, 佣金${existingOrder.commission}→${commission}`);
+          } else {
+            // 数据一致，跳过
+            skippedCount++;
           }
         } else {
           // 订单不存在，插入新订单
@@ -804,7 +646,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
             commission,
             status,
             orderDate,
-            JSON.stringify(order)
+            JSON.stringify(orderData.rawData)
           );
           newCount++;
         }
@@ -818,22 +660,14 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       if (skippedCount > 0) details.push(`跳过 ${skippedCount} 条`);
       message += details.join('，');
 
-      console.log(`✅ PM ${message}`);
+      console.log(`✅ LH ${message}`);
 
       res.json({
         success: true,
         message: message,
         data: {
-          total: response.data.data.pagination || { total: orders.length },
-          orders: orders.map(o => ({
-            id: o.orderId,
-            mcid: o.mcid,
-            sitename: o.buStoreName,
-            amount: o.amount,
-            total_cmsn: o.cashback,
-            status: o.status,
-            date_ymd: o.transactionDate ? o.transactionDate.split(' ')[0] : ''
-          })),
+          total: orders.length,
+          orders: orders,
           stats: {
             new: newCount,
             updated: updatedCount,
@@ -843,9 +677,296 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
         },
       });
     } else {
+      // 没有订单数据
+      res.json({
+        success: true,
+        message: '采集完成：未找到订单数据',
+        data: {
+          total: 0,
+          orders: [],
+          stats: {
+            new: 0,
+            updated: 0,
+            skipped: 0,
+            total: 0
+          }
+        }
+      });
+    }
+  } catch (error) {
+    console.error('采集LH订单错误:', error);
+    res.json({ success: false, message: '采集失败: ' + error.message });
+  }
+}
+
+/**
+ * 采集PartnerMatic订单数据（使用API Token）
+ */
+async function collectPMOrders(req, res, account, startDate, endDate) {
+  try {
+    // 获取PM API token（从account.api_token字段读取）
+    const pmToken = account.api_token;
+
+    if (!pmToken) {
+      return res.json({
+        success: false,
+        message: 'PartnerMatic账号未配置API Token，请在账号设置中添加'
+      });
+    }
+
+    console.log('📥 开始采集PM订单...');
+
+    // 构建POST请求（使用新API接口）
+    const response = await axios.post(
+      'https://api.partnermatic.com/api/transaction',
+      {
+        source: 'partnermatic',
+        token: pmToken,
+        dataScope: 'user',
+        beginDate: startDate,
+        endDate: endDate,
+        curPage: 1,
+        perPage: 2000
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // PM新API响应格式：{ code: "0", message: "success", data: { total, list: [...] } }
+    const isSuccess = response.data.code === '0' && response.data.data;
+
+    if (isSuccess && response.data.data.list) {
+      const orders = response.data.data.list || [];
+
+      console.log(`✅ PM API返回 ${orders.length} 条商品数据`);
+
+      // ========== 第1步：预处理订单数据，累加同一订单号的多个商品 ==========
+      const orderMap = new Map();  // 按order_id分组累加金额
+
+      orders.forEach(order => {
+        // 字段映射（PM新API格式）
+        const orderId = order.order_id;
+        const merchantId = order.mcid;  // 商家ID
+        const merchantName = order.merchant_name;
+        const orderAmount = parseFloat(order.sale_amount || 0);
+        const commission = parseFloat(order.sale_comm || 0);
+
+        // 状态映射
+        let status = 'Pending';
+        if (order.status === 'Approved') status = 'Approved';
+        else if (order.status === 'Rejected' || order.status === 'Canceled') status = 'Rejected';
+        else status = 'Pending';
+
+        // 订单日期：order_time是Unix时间戳（秒级），需转换为YYYY-MM-DD
+        let orderDate = '';
+        if (order.order_time) {
+          if (typeof order.order_time === 'number') {
+            // 数字类型：秒级时间戳
+            const timestamp = order.order_time * 1000;
+            orderDate = new Date(timestamp).toISOString().split('T')[0];
+          } else if (typeof order.order_time === 'string') {
+            // 字符串类型：可能是时间戳字符串
+            const numericTimestamp = parseInt(order.order_time);
+            if (!isNaN(numericTimestamp)) {
+              const timestamp = numericTimestamp * 1000;
+              orderDate = new Date(timestamp).toISOString().split('T')[0];
+            } else {
+              // 或者是日期字符串
+              orderDate = order.order_time.split(' ')[0];
+            }
+          }
+        }
+
+        // 如果订单已存在于Map中，累加金额和佣金
+        if (orderMap.has(orderId)) {
+          const existingData = orderMap.get(orderId);
+          existingData.orderAmount += orderAmount;
+          existingData.commission += commission;
+          // 保留最新的原始数据
+          existingData.rawData = order;
+        } else {
+          // 第一次遇到该订单号，创建记录
+          orderMap.set(orderId, {
+            orderId,
+            merchantId,
+            merchantName,
+            orderAmount,
+            commission,
+            status,
+            orderDate,
+            rawData: order
+          });
+        }
+      });
+
+      console.log(`📊 PM API返回 ${orders.length} 条商品数据，合并后得到 ${orderMap.size} 个订单`);
+
+      // ========== 第2步：同步删除数据库中API不存在的订单（日期范围内） ==========
+      // 查询数据库中该日期范围内的所有订单
+      const dbOrdersInRange = db.prepare(`
+        SELECT order_id FROM orders
+        WHERE user_id = ? AND platform_account_id = ?
+          AND order_date >= ? AND order_date <= ?
+      `).all(req.user.id, account.id, startDate, endDate);
+
+      // 找出API中不存在的订单
+      const apiOrderIds = new Set(orderMap.keys());
+      const ordersToDelete = dbOrdersInRange.filter(dbOrder => !apiOrderIds.has(dbOrder.order_id));
+
+      let deletedCount = 0;
+      if (ordersToDelete.length > 0) {
+        const deleteStmt = db.prepare(`
+          DELETE FROM orders
+          WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
+        `);
+
+        ordersToDelete.forEach(order => {
+          deleteStmt.run(req.user.id, account.id, order.order_id);
+          deletedCount++;
+        });
+
+        console.log(`🗑️  PM删除 ${deletedCount} 个API中不存在的订单`);
+      }
+
+      // ========== 第3步：将合并后的订单数据入库 ==========
+      const selectStmt = db.prepare(`
+        SELECT id, status, order_amount, commission FROM orders
+        WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
+      `);
+
+      const insertStmt = db.prepare(`
+        INSERT INTO orders
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+         order_amount, commission, status, order_date, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const updateStmt = db.prepare(`
+        UPDATE orders
+        SET status = ?, commission = ?, order_amount = ?,
+            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+
+      let newCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+
+      orderMap.forEach(orderData => {
+        // 直接使用聚合后的数据
+        const orderId = orderData.orderId;
+        const merchantId = orderData.merchantId;
+        const merchantName = orderData.merchantName;
+        const orderAmount = orderData.orderAmount;  // 已累加的金额
+        const commission = orderData.commission;    // 已累加的佣金
+        const status = orderData.status;
+        const orderDate = orderData.orderDate;
+
+        // 查询是否存在相同订单号
+        const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
+
+        if (existingOrder) {
+          // 订单已存在，比对状态和金额
+          if (existingOrder.status !== status ||
+              Math.abs(existingOrder.order_amount - orderAmount) > 0.01 ||
+              Math.abs(existingOrder.commission - commission) > 0.01) {
+            // 状态或金额不一致，更新订单
+            updateStmt.run(
+              status,
+              commission,
+              orderAmount,
+              merchantName,
+              JSON.stringify(orderData.rawData),
+              existingOrder.id
+            );
+            updatedCount++;
+            console.log(`📝 PM订单 ${orderId} 更新: 金额${existingOrder.order_amount}→${orderAmount}, 佣金${existingOrder.commission}→${commission}`);
+          } else {
+            // 数据一致，跳过
+            skippedCount++;
+          }
+        } else {
+          // 订单不存在，插入新订单
+          insertStmt.run(
+            req.user.id,
+            account.id,
+            orderId,
+            merchantId,
+            merchantName,
+            orderAmount,
+            commission,
+            status,
+            orderDate,
+            JSON.stringify(orderData.rawData)
+          );
+          newCount++;
+        }
+      });
+
+      // 构建详细的结果消息
+      let message = `采集完成：`;
+      const details = [];
+      if (newCount > 0) details.push(`新增 ${newCount} 条`);
+      if (updatedCount > 0) details.push(`更新 ${updatedCount} 条`);
+      if (deletedCount > 0) details.push(`删除 ${deletedCount} 条`);
+      if (skippedCount > 0) details.push(`跳过 ${skippedCount} 条`);
+      message += details.join('，');
+
+      console.log(`✅ PM ${message}`);
+
+      res.json({
+        success: true,
+        message: message,
+        data: {
+          total: response.data.data.total || orders.length,
+          orders: orders.map(o => {
+            // 处理order_time时间戳
+            let dateYmd = '';
+            if (o.order_time) {
+              if (typeof o.order_time === 'number') {
+                const timestamp = o.order_time * 1000;
+                dateYmd = new Date(timestamp).toISOString().split('T')[0];
+              } else if (typeof o.order_time === 'string') {
+                const numericTimestamp = parseInt(o.order_time);
+                if (!isNaN(numericTimestamp)) {
+                  const timestamp = numericTimestamp * 1000;
+                  dateYmd = new Date(timestamp).toISOString().split('T')[0];
+                } else {
+                  dateYmd = o.order_time.split(' ')[0];
+                }
+              }
+            }
+
+            return {
+              id: o.order_id,
+              mcid: o.mcid,
+              sitename: o.merchant_name,
+              amount: o.sale_amount,
+              total_cmsn: o.sale_comm,
+              status: o.status,
+              date_ymd: dateYmd
+            };
+          }),
+          stats: {
+            new: newCount,
+            updated: updatedCount,
+            deleted: deletedCount,
+            skipped: skippedCount,
+            total: orders.length
+          }
+        },
+      });
+    } else {
+      // API错误响应
+      const errorMessage = response.data.message || 'PM数据获取失败';
+      console.error(`❌ PM API错误: ${errorMessage}`);
+
       res.json({
         success: false,
-        message: response.data.message || 'PM数据获取失败',
+        message: `PM API错误: ${errorMessage}`,
       });
     }
   } catch (error) {

@@ -295,6 +295,8 @@ function updateSelectionUI() {
 // 显示添加账号弹窗
 function showAddAccountModal() {
   document.getElementById('addAccountModal').style.display = 'block';
+  // 根据默认选中的平台（linkhaitao）初始化字段显示状态
+  toggleApiTokenField();
 }
 
 // 关闭添加账号弹窗
@@ -315,15 +317,28 @@ function toggleApiTokenField() {
   const passwordInput = document.getElementById('accountPassword');
   const apiTokenGroup = document.getElementById('apiTokenGroup');
   const apiTokenInput = document.getElementById('apiToken');
+  const apiTokenHint = document.getElementById('apiTokenHint');
 
-  if (platform === 'linkbux' || platform === 'rewardoo') {
-    // LinkBux/Rewardoo：隐藏密码，显示Token
+  // LB、RW、LH、PM平台都使用API Token
+  if (platform === 'linkbux' || platform === 'rewardoo' || platform === 'linkhaitao' || platform === 'partnermatic') {
+    // 隐藏密码，显示Token（必填）
     passwordGroup.style.display = 'none';
     passwordInput.required = false;
     passwordInput.value = '';
 
     apiTokenGroup.style.display = 'block';
     apiTokenInput.required = true;
+
+    // 根据平台显示不同的提示文字
+    if (platform === 'linkhaitao') {
+      apiTokenHint.textContent = 'LinkHaitao平台使用API Token采集，无需密码（在平台后台获取）';
+    } else if (platform === 'partnermatic') {
+      apiTokenHint.textContent = 'PartnerMatic平台使用API Token采集，无需密码（在平台后台获取）';
+    } else if (platform === 'linkbux') {
+      apiTokenHint.textContent = 'LinkBux平台使用API Token采集，无需密码（在平台后台获取）';
+    } else if (platform === 'rewardoo') {
+      apiTokenHint.textContent = 'Rewardoo平台使用API Token采集，无需密码（在平台后台获取）';
+    }
   } else {
     // 其他平台：显示密码，隐藏Token
     passwordGroup.style.display = 'block';
@@ -353,8 +368,8 @@ async function handleAddAccount(e) {
     affiliateName
   };
 
-  // 如果是LinkBux或Rewardoo平台，添加API Token
-  if ((platform === 'linkbux' || platform === 'rewardoo') && apiToken) {
+  // 如果是LB、RW、LH、PM平台，添加API Token
+  if ((platform === 'linkbux' || platform === 'rewardoo' || platform === 'linkhaitao' || platform === 'partnermatic') && apiToken) {
     requestBody.apiToken = apiToken;
   }
 

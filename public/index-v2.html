@@ -185,16 +185,16 @@
         </div>
         <div class="form-group" id="passwordGroup">
           <label>账号密码:</label>
-          <input type="password" id="accountPassword" placeholder="平台登录密码" required>
+          <input type="password" id="accountPassword" placeholder="平台登录密码">
           <small style="color: #999; display: block; margin-top: 5px;">
-            LinkHaitao和PartnerMatic需要密码进行自动登录
+            某些平台需要密码进行自动登录
           </small>
         </div>
         <div class="form-group" id="apiTokenGroup" style="display: none;">
           <label>API Token:</label>
-          <input type="text" id="apiToken" placeholder="LinkBux/Rewardoo API Token">
+          <input type="text" id="apiToken" placeholder="API Token（在平台后台获取）">
           <small style="color: #999; display: block; margin-top: 5px;">
-            LinkBux和Rewardoo平台使用API Token采集，无需密码（在平台后台获取）
+            <span id="apiTokenHint">LinkBux、Rewardoo、LinkHaitao和PartnerMatic平台使用API Token采集，无需密码</span>
           </small>
         </div>
         <div class="form-group">
