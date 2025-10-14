@@ -641,8 +641,10 @@ async function calculateAndDisplayMerchantSummary(orders) {
   });
 
   // 如果选中了账号，添加平台账号ID过滤（只查询选中账号的数据）
-  // 注意：后端目前只支持单个platformAccountId参数，暂时不传参数，查询所有账号数据
-  // TODO: 未来改为支持多账号过滤
+  if (selectedAccountIds.length > 0) {
+    // 传递逗号分隔的账号ID列表
+    params.append('platformAccountIds', selectedAccountIds.join(','));
+  }
 
   try {
     // 调用后端API获取商家汇总（包含广告数据）

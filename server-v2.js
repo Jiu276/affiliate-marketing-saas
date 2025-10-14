@@ -1419,7 +1419,7 @@ app.get('/api/stats', authenticateToken, (req, res) => {
  */
 app.get('/api/merchant-summary', authenticateToken, (req, res) => {
   try {
-    const { startDate, endDate, platformAccountId } = req.query;
+    const { startDate, endDate, platformAccountIds } = req.query;
 
     // 第一步：获取订单汇总
     let orderQuery = `
@@ -1447,9 +1447,14 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       orderParams.push(endDate);
     }
 
-    if (platformAccountId) {
-      orderQuery += ' AND platform_account_id = ?';
-      orderParams.push(platformAccountId);
+    // 支持多账号ID过滤（逗号分隔的字符串）
+    if (platformAccountIds) {
+      const accountIds = platformAccountIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      if (accountIds.length > 0) {
+        const placeholders = accountIds.map(() => '?').join(',');
+        orderQuery += ` AND platform_account_id IN (${placeholders})`;
+        orderParams.push(...accountIds);
+      }
     }
 
     orderQuery += ' GROUP BY merchant_id, merchant_name ORDER BY total_commission DESC';
@@ -1461,11 +1466,19 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
     }
 
     // 第二步：获取广告数据汇总（按merchant_id分组）
+    // 注意：预算是每日预算，不累加，只取结束日期那天的值
     let adsQuery = `
       SELECT
         merchant_id,
         GROUP_CONCAT(DISTINCT campaign_name) as campaign_names,
-        SUM(campaign_budget) as total_budget,
+        (
+          SELECT campaign_budget
+          FROM google_ads_data AS inner_ads
+          WHERE inner_ads.merchant_id = google_ads_data.merchant_id
+            AND inner_ads.user_id = google_ads_data.user_id
+            ${endDate ? `AND inner_ads.date = '${endDate}'` : ''}
+          LIMIT 1
+        ) as total_budget,
         SUM(impressions) as total_impressions,
         SUM(clicks) as total_clicks,
         SUM(cost) as total_cost
