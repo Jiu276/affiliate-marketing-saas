@@ -172,24 +172,36 @@
       <form id="addAccountForm">
         <div class="form-group">
           <label>平台:</label>
-          <select id="platformSelect" required>
+          <select id="platformSelect" required onchange="toggleApiTokenField()">
             <option value="linkhaitao">LinkHaitao</option>
             <option value="partnermatic">PartnerMatic</option>
+            <option value="linkbux">LinkBux</option>
+            <option value="rewardoo">Rewardoo</option>
           </select>
         </div>
         <div class="form-group">
           <label>账号名称:</label>
-          <input type="text" id="accountName" placeholder="平台登录用户名" required>
+          <input type="text" id="accountName" placeholder="平台登录用户名或标识" required>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="passwordGroup">
           <label>账号密码:</label>
           <input type="password" id="accountPassword" placeholder="平台登录密码" required>
+          <small style="color: #999; display: block; margin-top: 5px;">
+            LinkHaitao和PartnerMatic需要密码进行自动登录
+          </small>
+        </div>
+        <div class="form-group" id="apiTokenGroup" style="display: none;">
+          <label>API Token:</label>
+          <input type="text" id="apiToken" placeholder="LinkBux/Rewardoo API Token">
+          <small style="color: #999; display: block; margin-top: 5px;">
+            LinkBux和Rewardoo平台使用API Token采集，无需密码（在平台后台获取）
+          </small>
         </div>
         <div class="form-group">
           <label>联盟序号（可选）:</label>
-          <input type="text" id="affiliateName" placeholder="例如: LH1, PM1, PM4" maxlength="10">
+          <input type="text" id="affiliateName" placeholder="例如: LH1, PM1, PM4, LB1" maxlength="10">
           <small style="color: #999; display: block; margin-top: 5px;">
-            用于区分同平台的多个账号，如 LH1、LH2、PM1 等
+            用于区分同平台的多个账号，如 LH1、LH2、PM1、LB1 等
           </small>
         </div>
         <button type="submit" class="btn-primary">添加</button>

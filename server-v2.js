@@ -146,10 +146,10 @@ app.post('/api/platform-accounts', authenticateToken, (req, res) => {
       return res.json({ success: false, message: '缺少必要参数' });
     }
 
-    // LinkBux平台必须提供apiToken，其他平台必须提供密码
-    if (platform === 'linkbux') {
+    // LinkBux和Rewardoo平台必须提供apiToken，其他平台必须提供密码
+    if (platform === 'linkbux' || platform === 'rewardoo') {
       if (!apiToken) {
-        return res.json({ success: false, message: 'LinkBux平台需要提供API Token' });
+        return res.json({ success: false, message: `${platform === 'linkbux' ? 'LinkBux' : 'Rewardoo'}平台需要提供API Token` });
       }
     } else {
       if (!accountPassword) {
@@ -517,6 +517,8 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
       return await collectPMOrders(req, res, account, startDate, endDate);
     } else if (account.platform === 'linkbux') {
       return await collectLBOrders(req, res, account, startDate, endDate);
+    } else if (account.platform === 'rewardoo') {
+      return await collectRWOrders(req, res, account, startDate, endDate);
     } else {
       return res.json({ success: false, message: `不支持的平台: ${account.platform}` });
     }
@@ -1088,6 +1090,234 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
     }
   } catch (error) {
     console.error('采集LB订单错误:', error);
+    res.json({ success: false, message: '采集失败: ' + error.message });
+  }
+}
+
+/**
+ * 采集Rewardoo订单数据
+ */
+async function collectRWOrders(req, res, account, startDate, endDate) {
+  try {
+    // 获取RW API token（从account.api_token字段读取）
+    const rwToken = account.api_token;
+
+    if (!rwToken) {
+      return res.json({
+        success: false,
+        message: 'Rewardoo账号未配置API Token，请在账号设置中添加'
+      });
+    }
+
+    // 构建POST请求参数
+    const params = new URLSearchParams({
+      token: rwToken,
+      begin_date: startDate,
+      end_date: endDate,
+      page: '1',
+      limit: '1000'
+    });
+
+    const apiUrl = 'https://admin.rewardoo.com/api.php?mod=medium&op=transaction_details';
+
+    console.log('📥 开始采集RW订单...');
+
+    const response = await axios.post(apiUrl, params, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    // RW API响应格式与LB类似
+    const isSuccess =
+      (response.data.code === 0 || response.data.code === '0') ||
+      (response.data.status && (response.data.status.code === 0 || response.data.status.code === '0'));
+
+    if (isSuccess && response.data.data) {
+      const orders = response.data.data.list || response.data.data.transactions || [];
+
+      // ========== 第1步：预处理订单数据，累加同一订单号的多个商品 ==========
+      const orderMap = new Map();
+
+      orders.forEach(order => {
+        const orderId = order.order_id || order.rewardoo_id;
+        const merchantId = order.mid;
+        const merchantName = order.merchant_name;
+        const orderAmount = parseFloat(order.sale_amount || 0);
+        const commission = parseFloat(order.sale_comm || 0);
+
+        // 状态映射
+        let status = 'Pending';
+        if (order.status === 'Approved') status = 'Approved';
+        else if (order.status === 'Rejected') status = 'Rejected';
+        else status = 'Pending';
+
+        // 订单日期处理
+        let orderDate = '';
+        if (order.order_time) {
+          if (typeof order.order_time === 'number') {
+            const timestamp = order.order_time * 1000;
+            orderDate = new Date(timestamp).toISOString().split('T')[0];
+          } else if (typeof order.order_time === 'string') {
+            orderDate = order.order_time.split(' ')[0];
+          }
+        } else if (order.validation_date) {
+          orderDate = typeof order.validation_date === 'string' ? order.validation_date.split(' ')[0] : '';
+        }
+
+        // 如果订单已存在于Map中，累加金额和佣金
+        if (orderMap.has(orderId)) {
+          const existingData = orderMap.get(orderId);
+          existingData.orderAmount += orderAmount;
+          existingData.commission += commission;
+          existingData.rawData = order;
+        } else {
+          orderMap.set(orderId, {
+            orderId,
+            merchantId,
+            merchantName,
+            orderAmount,
+            commission,
+            status,
+            orderDate,
+            rawData: order
+          });
+        }
+      });
+
+      console.log(`📊 RW API返回 ${orders.length} 条商品数据，合并后得到 ${orderMap.size} 个订单`);
+
+      // ========== 第2步：将合并后的订单数据入库 ==========
+      const selectStmt = db.prepare(`
+        SELECT id, status, order_amount, commission FROM orders
+        WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
+      `);
+
+      const insertStmt = db.prepare(`
+        INSERT INTO orders
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+         order_amount, commission, status, order_date, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const updateStmt = db.prepare(`
+        UPDATE orders
+        SET status = ?, commission = ?, order_amount = ?,
+            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+
+      let newCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+
+      orderMap.forEach(orderData => {
+        const orderId = orderData.orderId;
+        const merchantId = orderData.merchantId;
+        const merchantName = orderData.merchantName;
+        const orderAmount = orderData.orderAmount;
+        const commission = orderData.commission;
+        const status = orderData.status;
+        const orderDate = orderData.orderDate;
+
+        const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
+
+        if (existingOrder) {
+          if (existingOrder.status !== status ||
+              Math.abs(existingOrder.order_amount - orderAmount) > 0.01 ||
+              Math.abs(existingOrder.commission - commission) > 0.01) {
+            updateStmt.run(
+              status,
+              commission,
+              orderAmount,
+              merchantName,
+              JSON.stringify(orderData.rawData),
+              existingOrder.id
+            );
+            updatedCount++;
+            console.log(`📝 RW订单 ${orderId} 更新: 金额${existingOrder.order_amount}→${orderAmount}, 佣金${existingOrder.commission}→${commission}`);
+          } else {
+            skippedCount++;
+          }
+        } else {
+          insertStmt.run(
+            req.user.id,
+            account.id,
+            orderId,
+            merchantId,
+            merchantName,
+            orderAmount,
+            commission,
+            status,
+            orderDate,
+            JSON.stringify(orderData.rawData)
+          );
+          newCount++;
+        }
+      });
+
+      let message = `采集完成：`;
+      const details = [];
+      if (newCount > 0) details.push(`新增 ${newCount} 条`);
+      if (updatedCount > 0) details.push(`更新 ${updatedCount} 条`);
+      if (skippedCount > 0) details.push(`跳过 ${skippedCount} 条`);
+      message += details.join('，');
+
+      console.log(`✅ RW ${message}`);
+
+      res.json({
+        success: true,
+        message: message,
+        data: {
+          total: response.data.data.total_items || orders.length,
+          total_trans: response.data.data.total_trans || 0,
+          total_page: response.data.data.total_page || 1,
+          orders: orders.map(o => {
+            let dateYmd = '';
+            if (o.order_time) {
+              if (typeof o.order_time === 'number') {
+                const timestamp = o.order_time * 1000;
+                dateYmd = new Date(timestamp).toISOString().split('T')[0];
+              } else if (typeof o.order_time === 'string') {
+                dateYmd = o.order_time.split(' ')[0];
+              }
+            }
+
+            return {
+              id: o.order_id || o.rewardoo_id,
+              mcid: o.mcid,
+              sitename: o.merchant_name,
+              amount: o.sale_amount,
+              total_cmsn: o.sale_comm,
+              status: o.status,
+              date_ymd: dateYmd
+            };
+          }),
+          stats: {
+            new: newCount,
+            updated: updatedCount,
+            skipped: skippedCount,
+            total: orders.length
+          }
+        },
+      });
+    } else {
+      const errorCode = response.data.code || (response.data.status && response.data.status.code);
+      const errorMessage =
+        response.data.msg ||
+        response.data.message ||
+        (response.data.status && response.data.status.msg) ||
+        'RW数据获取失败';
+
+      console.error(`❌ RW API错误 [code: ${errorCode}]: ${errorMessage}`);
+
+      res.json({
+        success: false,
+        message: `RW API错误: ${errorMessage} (code: ${errorCode})`,
+      });
+    }
+  } catch (error) {
+    console.error('采集RW订单错误:', error);
     res.json({ success: false, message: '采集失败: ' + error.message });
   }
 }

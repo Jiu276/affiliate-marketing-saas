@@ -303,6 +303,36 @@ function closeAddAccountModal() {
   document.getElementById('addAccountForm').reset();
   document.getElementById('addAccountStatus').className = 'status-message';
   document.getElementById('addAccountStatus').textContent = '';
+  // 重置字段显示状态（恢复密码显示，隐藏Token）
+  document.getElementById('passwordGroup').style.display = 'block';
+  document.getElementById('apiTokenGroup').style.display = 'none';
+}
+
+// 切换API Token字段显示/隐藏，同时控制密码字段
+function toggleApiTokenField() {
+  const platform = document.getElementById('platformSelect').value;
+  const passwordGroup = document.getElementById('passwordGroup');
+  const passwordInput = document.getElementById('accountPassword');
+  const apiTokenGroup = document.getElementById('apiTokenGroup');
+  const apiTokenInput = document.getElementById('apiToken');
+
+  if (platform === 'linkbux' || platform === 'rewardoo') {
+    // LinkBux/Rewardoo：隐藏密码，显示Token
+    passwordGroup.style.display = 'none';
+    passwordInput.required = false;
+    passwordInput.value = '';
+
+    apiTokenGroup.style.display = 'block';
+    apiTokenInput.required = true;
+  } else {
+    // 其他平台：显示密码，隐藏Token
+    passwordGroup.style.display = 'block';
+    passwordInput.required = true;
+
+    apiTokenGroup.style.display = 'none';
+    apiTokenInput.required = false;
+    apiTokenInput.value = '';
+  }
 }
 
 // 处理添加账号
@@ -313,6 +343,20 @@ async function handleAddAccount(e) {
   const accountName = document.getElementById('accountName').value;
   const accountPassword = document.getElementById('accountPassword').value;
   const affiliateName = document.getElementById('affiliateName').value.trim();
+  const apiToken = document.getElementById('apiToken').value.trim();
+
+  // 构建请求体
+  const requestBody = {
+    platform,
+    accountName,
+    accountPassword,
+    affiliateName
+  };
+
+  // 如果是LinkBux或Rewardoo平台，添加API Token
+  if ((platform === 'linkbux' || platform === 'rewardoo') && apiToken) {
+    requestBody.apiToken = apiToken;
+  }
 
   try {
     const response = await fetch(`${API_BASE}/platform-accounts`, {
@@ -321,7 +365,7 @@ async function handleAddAccount(e) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${authToken}`,
       },
-      body: JSON.stringify({ platform, accountName, accountPassword, affiliateName }),
+      body: JSON.stringify(requestBody),
     });
 
     const result = await response.json();
