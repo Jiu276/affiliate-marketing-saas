@@ -1,4 +1,15 @@
 // 多用户SaaS系统 - Express后端服务器
+
+// 设置控制台编码为UTF-8（修复Windows终端中文乱码）
+if (process.platform === 'win32') {
+  try {
+    const { execSync } = require('child_process');
+    execSync('chcp 65001', { stdio: 'ignore' });
+  } catch (e) {
+    // 忽略错误
+  }
+}
+
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -394,6 +405,22 @@ async function getLHToken(platformAccountId) {
   return loginResult.token;
 }
 
+// ============ 工具函数 ============
+
+/**
+ * 生成标准化的商家标识符（merchant_slug）
+ * 规则：小写 + 移除所有非字母数字字符
+ * @param {string} merchantName - 商家名称
+ * @returns {string} - 标准化后的商家标识符
+ * @example
+ * generateMerchantSlug("Screwfix - FR") // 返回 "screwfixfr"
+ * generateMerchantSlug("Champion US") // 返回 "championus"
+ */
+function generateMerchantSlug(merchantName) {
+  if (!merchantName) return '';
+  return merchantName.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 // ============ 所有平台现在都使用API Token ============
 // LH、PM、LB、RW平台使用固定API Token，不需要登录，直接从账号配置中读取
 
@@ -585,15 +612,15 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
 
       const insertStmt = db.prepare(`
         INSERT INTO orders
-        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -615,7 +642,7 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
         const existingOrder = selectStmt.get(req.user.id, account.id, orderId);
 
         if (existingOrder) {
-          // 订单已存在，比对状态和金额
+          // 订单已存在,比对状态和金额
           if (existingOrder.status !== status ||
               Math.abs(existingOrder.order_amount - orderAmount) > 0.01 ||
               Math.abs(existingOrder.commission - commission) > 0.01) {
@@ -625,6 +652,7 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
               commission,
               orderAmount,
               merchantName,
+              generateMerchantSlug(merchantName),
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -642,6 +670,7 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
             orderId,
             merchantId,
             merchantName,
+            generateMerchantSlug(merchantName),
             orderAmount,
             commission,
             status,
@@ -839,15 +868,15 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
 
       const insertStmt = db.prepare(`
         INSERT INTO orders
-        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -879,6 +908,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
               commission,
               orderAmount,
               merchantName,
+              generateMerchantSlug(merchantName),
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -896,6 +926,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
             orderId,
             merchantId,
             merchantName,
+            generateMerchantSlug(merchantName),
             orderAmount,
             commission,
             status,
@@ -1077,15 +1108,15 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
 
       const insertStmt = db.prepare(`
         INSERT INTO orders
-        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -1117,6 +1148,7 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
               commission,
               orderAmount,
               merchantName,
+              generateMerchantSlug(merchantName),
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -1134,6 +1166,7 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
             orderId,
             merchantId,
             merchantName,
+            generateMerchantSlug(merchantName),
             orderAmount,
             commission,
             status,
@@ -1326,15 +1359,15 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
 
       const insertStmt = db.prepare(`
         INSERT INTO orders
-        (user_id, platform_account_id, order_id, merchant_id, merchant_name,
+        (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -1362,6 +1395,7 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
               commission,
               orderAmount,
               merchantName,
+              generateMerchantSlug(merchantName),
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -1377,6 +1411,7 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
             orderId,
             merchantId,
             merchantName,
+            generateMerchantSlug(merchantName),
             orderAmount,
             commission,
             status,
@@ -1542,29 +1577,32 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
   try {
     const { startDate, endDate, platformAccountIds } = req.query;
 
-    // 第一步：获取订单汇总
+    // 第一步：获取订单汇总（关联平台账号获取affiliate_name，使用merchant_slug）
     let orderQuery = `
       SELECT
-        merchant_id,
-        merchant_name,
+        o.merchant_id,
+        o.merchant_name,
+        o.merchant_slug,
+        pa.affiliate_name,
         COUNT(*) as order_count,
-        SUM(order_amount) as total_amount,
-        SUM(commission) as total_commission,
-        SUM(CASE WHEN status = 'Approved' THEN commission ELSE 0 END) as confirmed_commission,
-        SUM(CASE WHEN status = 'Pending' THEN commission ELSE 0 END) as pending_commission,
-        SUM(CASE WHEN status = 'Rejected' THEN commission ELSE 0 END) as rejected_commission
-      FROM orders
-      WHERE user_id = ?
+        SUM(o.order_amount) as total_amount,
+        SUM(o.commission) as total_commission,
+        SUM(CASE WHEN o.status = 'Approved' THEN o.commission ELSE 0 END) as confirmed_commission,
+        SUM(CASE WHEN o.status = 'Pending' THEN o.commission ELSE 0 END) as pending_commission,
+        SUM(CASE WHEN o.status = 'Rejected' THEN o.commission ELSE 0 END) as rejected_commission
+      FROM orders o
+      LEFT JOIN platform_accounts pa ON o.platform_account_id = pa.id
+      WHERE o.user_id = ?
     `;
     const orderParams = [req.user.id];
 
     if (startDate) {
-      orderQuery += ' AND order_date >= ?';
+      orderQuery += ' AND o.order_date >= ?';
       orderParams.push(startDate);
     }
 
     if (endDate) {
-      orderQuery += ' AND order_date <= ?';
+      orderQuery += ' AND o.order_date <= ?';
       orderParams.push(endDate);
     }
 
@@ -1573,12 +1611,12 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       const accountIds = platformAccountIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
       if (accountIds.length > 0) {
         const placeholders = accountIds.map(() => '?').join(',');
-        orderQuery += ` AND platform_account_id IN (${placeholders})`;
+        orderQuery += ` AND o.platform_account_id IN (${placeholders})`;
         orderParams.push(...accountIds);
       }
     }
 
-    orderQuery += ' GROUP BY merchant_id, merchant_name ORDER BY total_commission DESC';
+    orderQuery += ' GROUP BY o.merchant_slug, o.merchant_name, pa.affiliate_name ORDER BY total_commission DESC';
 
     const orderSummary = db.prepare(orderQuery).all(...orderParams);
     console.log(`📊 订单汇总查询结果: ${orderSummary.length} 个商家`);
@@ -1586,16 +1624,19 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       console.log('样例商家:', orderSummary[0]);
     }
 
-    // 第二步：获取广告数据汇总（按merchant_id分组）
+    // 第二步：获取广告数据汇总（按merchant_slug + affiliate_name分组）
     // 注意：预算是每日预算，不累加，只取结束日期那天的值
     let adsQuery = `
       SELECT
         merchant_id,
+        merchant_slug,
+        affiliate_name,
         GROUP_CONCAT(DISTINCT campaign_name) as campaign_names,
         (
           SELECT campaign_budget
           FROM google_ads_data AS inner_ads
-          WHERE inner_ads.merchant_id = google_ads_data.merchant_id
+          WHERE inner_ads.merchant_slug = google_ads_data.merchant_slug
+            AND inner_ads.affiliate_name = google_ads_data.affiliate_name
             AND inner_ads.user_id = google_ads_data.user_id
             ${endDate ? `AND inner_ads.date = '${endDate}'` : ''}
           LIMIT 1
@@ -1618,7 +1659,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       adsParams.push(endDate);
     }
 
-    adsQuery += ' GROUP BY merchant_id';
+    adsQuery += ' GROUP BY merchant_slug, affiliate_name';
 
     const adsSummary = db.prepare(adsQuery).all(...adsParams);
     console.log(`📊 广告数据查询结果: ${adsSummary.length} 个商家`);
@@ -1626,11 +1667,13 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       console.log('样例广告商家:', adsSummary[0]);
     }
 
-    // 第三步：合并数据
+    // 第三步：合并数据（使用merchant_slug + affiliate_name作为复合键）
     const adsMap = new Map();
     adsSummary.forEach(ads => {
-      if (ads.merchant_id) {
-        adsMap.set(ads.merchant_id, {
+      if (ads.merchant_slug && ads.affiliate_name) {
+        // 使用 merchant_slug + affiliate_name 作为复合键（统一转小写比较）
+        const key = `${ads.merchant_slug}_${(ads.affiliate_name || '').toLowerCase()}`;
+        adsMap.set(key, {
           campaign_names: ads.campaign_names || '',
           total_budget: ads.total_budget || 0,
           total_impressions: ads.total_impressions || 0,
@@ -1640,13 +1683,16 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       }
     });
 
-    // 合并订单汇总和广告数据，只保留有广告数据的商家
+    // 合并订单汇总和广告数据，只保留有广告数据的商家（同时匹配merchant_slug和affiliate_name）
     const mergedSummary = orderSummary
       .map(order => {
-        const adsData = adsMap.get(order.merchant_id);
+        // 使用复合键匹配：merchant_slug + affiliate_name（统一转小写）
+        const key = `${order.merchant_slug}_${(order.affiliate_name || '').toLowerCase()}`;
+        const adsData = adsMap.get(key);
 
-        // 如果该商家没有广告数据，返回null（稍后过滤掉）
+        // 如果该商家没有匹配的广告数据，返回null（稍后过滤掉）
         if (!adsData || !adsData.campaign_names) {
+          console.log(`⚠️  订单商家 ${order.merchant_slug}(${order.affiliate_name}) 没有匹配的广告数据，已过滤`);
           return null;
         }
 
@@ -1842,13 +1888,13 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
 
     const insertStmt = db.prepare(`
       INSERT INTO google_ads_data
-      (user_id, sheet_id, date, campaign_name, affiliate_name, merchant_id, campaign_budget, currency, impressions, clicks, cost)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (user_id, sheet_id, date, campaign_name, affiliate_name, merchant_id, merchant_slug, campaign_budget, currency, impressions, clicks, cost)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const updateStmt = db.prepare(`
       UPDATE google_ads_data
-      SET affiliate_name = ?, merchant_id = ?, campaign_budget = ?, currency = ?, impressions = ?, clicks = ?, cost = ?, updated_at = CURRENT_TIMESTAMP
+      SET affiliate_name = ?, merchant_id = ?, merchant_slug = ?, campaign_budget = ?, currency = ?, impressions = ?, clicks = ?, cost = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
 
@@ -1874,8 +1920,8 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
 
       if (!date || !campaignName) continue; // 必填字段检查
 
-      // 提取联盟名称和商家编号
-      const { affiliateName, merchantId } = extractCampaignInfo(campaignName);
+      // 提取联盟名称、商家编号和商家标识符
+      const { affiliateName, merchantId, merchantSlug } = extractCampaignInfo(campaignName);
 
       // 增量更新逻辑：只更新今天的数据
       if (date === today) {
@@ -1883,7 +1929,7 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
 
         if (existing) {
           // 更新今日数据
-          updateStmt.run(affiliateName, merchantId, budget, currency, impressions, clicks, cost, existing.id);
+          updateStmt.run(affiliateName, merchantId, merchantSlug, budget, currency, impressions, clicks, cost, existing.id);
           updatedCount++;
         } else {
           // 插入新数据
@@ -1894,6 +1940,7 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
             campaignName,
             affiliateName,
             merchantId,
+            merchantSlug,
             budget,
             currency,
             impressions,
@@ -1914,6 +1961,7 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
             campaignName,
             affiliateName,
             merchantId,
+            merchantSlug,
             budget,
             currency,
             impressions,
