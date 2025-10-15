@@ -37,10 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ============ Tab切换 ============
-function showTab(tabName) {
+function showTab(tabName, event) {
   // 切换按钮状态
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  event.target.classList.add('active');
+  if (event && event.target) {
+    event.target.classList.add('active');
+  }
 
   // 切换内容
   document.getElementById('loginTab').classList.remove('active');
@@ -166,6 +168,50 @@ function showAppSection() {
 
   loadPlatformAccounts();
   loadGoogleSheets();
+
+  // 默认显示数据采集面板
+  showSection('dashboard');
+}
+
+// ============ 侧边栏导航切换 ============
+function showSection(sectionName, event) {
+  // 阻止默认链接跳转
+  if (event) {
+    event.preventDefault();
+  }
+
+  // 更新侧边栏激活状态
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  if (event && event.currentTarget) {
+    event.currentTarget.classList.add('active');
+  }
+
+  // 隐藏所有内容区域
+  document.querySelectorAll('.content-section').forEach(section => {
+    section.style.display = 'none';
+  });
+
+  // 显示对应的内容区域
+  let pageTitle = '';
+  switch(sectionName) {
+    case 'dashboard':
+      document.getElementById('dashboardSection').style.display = 'block';
+      pageTitle = '数据采集';
+      break;
+    case 'accounts':
+      document.getElementById('accountsSection').style.display = 'block';
+      pageTitle = '平台账号管理';
+      break;
+    case 'sheets':
+      document.getElementById('sheetsSection').style.display = 'block';
+      pageTitle = '谷歌表格管理';
+      break;
+  }
+
+  // 更新页面标题
+  document.getElementById('pageTitle').textContent = pageTitle;
 }
 
 // ============ 平台账号管理 ============
@@ -190,16 +236,19 @@ async function loadPlatformAccounts() {
 
 // 渲染账号列表
 function renderAccountsList() {
+  console.log('renderAccountsList 被调用, platformAccounts:', platformAccounts);
   const container = document.getElementById('accountsList');
 
   if (platformAccounts.length === 0) {
+    console.log('没有平台账号');
     container.innerHTML = '<p style="color: #999;">暂无平台账号，请先添加</p>';
     document.getElementById('collectSection').style.display = 'none';
     return;
   }
 
-  // 清空之前的选择状态
-  selectedAccountIds = [];
+  // 默认全选所有账号
+  selectedAccountIds = platformAccounts.map(a => a.id);
+  console.log('默认全选账号, selectedAccountIds:', selectedAccountIds);
 
   container.innerHTML = `
     <div style="margin-bottom: 15px;">
@@ -216,6 +265,7 @@ function renderAccountsList() {
                  class="account-checkbox"
                  value="${account.id}"
                  onchange="toggleAccountSelection(${account.id})"
+                 checked
                  style="width: 18px; height: 18px; margin-right: 12px; cursor: pointer;">
           <div>
             <span class="platform-badge">${account.platform}</span>
@@ -238,8 +288,8 @@ function renderAccountsList() {
   // 显示采集区域
   document.getElementById('collectSection').style.display = 'block';
 
-  // 清空状态提示
-  showMessage('collectStatus', '请勾选要采集的账号', 'info');
+  // 更新选择状态UI
+  updateSelectionUI();
 }
 
 // 切换账号选择状态
@@ -277,6 +327,7 @@ function deselectAllAccounts() {
 // 更新选择状态UI
 function updateSelectionUI() {
   const count = selectedAccountIds.length;
+  console.log('updateSelectionUI 被调用，选中账号数:', count, 'IDs:', selectedAccountIds);
 
   if (count > 0) {
     document.getElementById('collectSection').style.display = 'block';
@@ -286,6 +337,7 @@ function updateSelectionUI() {
       .map(a => `${a.platform}-${a.account_name}`)
       .join(', ');
 
+    console.log('显示已选择消息:', `已选择 ${count} 个账号: ${accounts}`);
     showMessage('collectStatus', `已选择 ${count} 个账号: ${accounts}`, 'info');
   } else {
     showMessage('collectStatus', '请选择至少一个平台账号', 'error');

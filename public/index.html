@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>联盟营销数据采集系统 - 多用户版</title>
+  <title>联盟营销数据采集系统</title>
   <link rel="stylesheet" href="style-v2.css">
 </head>
 <body>
-  <div class="container">
-    <!-- 登录/注册页面 -->
-    <div id="authSection" class="section">
-      <header>
-        <h1>🚀 联盟营销数据采集系统</h1>
+  <!-- 登录/注册页面 -->
+  <div id="authSection" class="auth-container">
+    <div class="auth-card">
+      <header class="auth-header">
+        <h1>联盟营销数据采集系统</h1>
         <p class="subtitle">多用户SaaS版本</p>
       </header>
 
       <div class="auth-tabs">
-        <button class="tab-btn active" onclick="showTab('login')">登录</button>
-        <button class="tab-btn" onclick="showTab('register')">注册</button>
+        <button class="tab-btn active" onclick="showTab('login', event)">登录</button>
+        <button class="tab-btn" onclick="showTab('register', event)">注册</button>
       </div>
 
       <!-- 登录表单 -->
@@ -56,47 +56,70 @@
         <div id="registerStatus" class="status-message"></div>
       </div>
     </div>
+  </div>
 
-    <!-- 主应用页面 -->
-    <div id="appSection" style="display: none;">
-      <header>
-        <h1>📊 数据采集管理</h1>
-        <div class="user-bar">
-          <span>👤 <strong id="currentUser"></strong></span>
-          <button onclick="toggleSettings()" class="btn-secondary" style="margin-right: 10px;">⚙️ 设置</button>
-          <button onclick="logout()" class="btn-secondary">退出</button>
-        </div>
-      </header>
+  <!-- 主应用页面（带侧边栏） -->
+  <div id="appSection" class="app-layout" style="display: none;">
+    <!-- 左侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2 class="logo">数据采集</h2>
+      </div>
 
-      <div class="section">
-        <!-- 设置区域（折叠） -->
-        <div id="settingsSection" style="display: none;">
-          <!-- 平台账号管理 -->
-          <div class="card">
-            <h2>🔑 平台账号管理</h2>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" onclick="showSection('dashboard', event)">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3 4C3 3.44772 3.44772 3 4 3H7C7.55228 3 8 3.44772 8 4V7C8 7.55228 7.55228 8 7 8H4C3.44772 8 3 7.55228 3 7V4Z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M3 13C3 12.4477 3.44772 12 4 12H7C7.55228 12 8 12.4477 8 13V16C8 16.5523 7.55228 17 7 17H4C3.44772 17 3 16.5523 3 16V13Z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M12 4C12 3.44772 12.4477 3 13 3H16C16.5523 3 17 3.44772 17 4V7C17 7.55228 16.5523 8 16 8H13C12.4477 8 12 7.55228 12 7V4Z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M12 13C12 12.4477 12.4477 12 13 12H16C16.5523 12 17 12.4477 17 13V16C17 16.5523 16.5523 17 16 17H13C12.4477 17 12 16.5523 12 16V13Z" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+          <span>数据采集</span>
+        </a>
 
-            <div id="accountsList">
-              <!-- 账号列表动态生成 -->
-            </div>
+        <a href="#" class="nav-item" onclick="showSection('accounts', event)">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M4 6C4 4.89543 4.89543 4 6 4H14C15.1046 4 16 4.89543 16 6V14C16 15.1046 15.1046 16 14 16H6C4.89543 16 4 15.1046 4 14V6Z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M8 8H12M8 12H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>平台账号</span>
+        </a>
 
-            <button onclick="showAddAccountModal()" class="btn-primary">+ 添加平台账号</button>
+        <a href="#" class="nav-item" onclick="showSection('sheets', event)">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M5 3C4.44772 3 4 3.44772 4 4V16C4 16.5523 4.44772 17 5 17H15C15.5523 17 16 16.5523 16 16V7L12 3H5Z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M8 10H12M8 13H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>谷歌表格</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M10 6V10L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
           </div>
-
-          <!-- Google表格管理 -->
-          <div class="card">
-            <h2>📊 Google表格管理</h2>
-
-            <div id="googleSheetsList">
-              <!-- 表格列表动态生成 -->
-            </div>
-
-            <button onclick="showAddGoogleSheetModal()" class="btn-primary">+ 添加Google表格</button>
+          <div class="user-details">
+            <div class="user-name" id="currentUser">用户</div>
+            <button onclick="logout()" class="logout-btn">退出</button>
           </div>
         </div>
+      </div>
+    </aside>
 
-        <!-- 数据采集（主界面，默认显示） -->
-        <div class="card" id="collectSection">
-          <h2>📥 数据采集</h2>
+    <!-- 主内容区 -->
+    <main class="main-content">
+      <div class="content-header">
+        <h1 id="pageTitle">数据采集</h1>
+      </div>
+
+      <!-- 数据采集面板 -->
+      <div id="dashboardSection" class="content-section">
+        <div class="card" id="collectSection" style="display: none;">
+          <h2>开始采集数据</h2>
 
           <form id="collectForm">
             <div class="form-row">
@@ -119,7 +142,7 @@
 
           <!-- 统计卡片 -->
           <div id="statsSection" style="display: none;">
-            <h3>📊 数据统计</h3>
+            <h3>数据统计</h3>
             <div class="stats-cards">
               <div class="stat-card">
                 <div class="stat-label">订单总数</div>
@@ -138,24 +161,24 @@
 
           <!-- 商家汇总表格 -->
           <div id="merchantSection" style="display: none;">
-            <h3>💼 商家汇总</h3>
+            <h3>商家汇总</h3>
             <div class="table-container">
               <table>
                 <thead>
                   <tr>
                     <th>排名</th>
-                    <th style="background: #4285f4; color: white;">广告系列</th>
+                    <th>广告系列</th>
                     <th>商家ID</th>
-                    <th style="background: #4285f4; color: white;">预算</th>
-                    <th style="background: #4285f4; color: white;">展示</th>
-                    <th style="background: #4285f4; color: white;">点击</th>
-                    <th style="background: #4285f4; color: white;">广告费</th>
+                    <th>预算</th>
+                    <th>展示</th>
+                    <th>点击</th>
+                    <th>广告费</th>
                     <th>订单数</th>
                     <th>总佣金</th>
-                    <th style="background: #28a745; color: white;">CR</th>
-                    <th style="background: #28a745; color: white;">EPC</th>
-                    <th style="background: #28a745; color: white;">CPC</th>
-                    <th style="background: #28a745; color: white;">ROI</th>
+                    <th>CR</th>
+                    <th>EPC</th>
+                    <th>CPC</th>
+                    <th>ROI</th>
                   </tr>
                 </thead>
                 <tbody id="merchantTableBody">
@@ -165,7 +188,35 @@
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- 平台账号管理面板 -->
+      <div id="accountsSection" class="content-section" style="display: none;">
+        <div class="card">
+          <div class="card-header">
+            <h2>平台账号管理</h2>
+            <button onclick="showAddAccountModal()" class="btn-primary">+ 添加账号</button>
+          </div>
+
+          <div id="accountsList">
+            <!-- 账号列表动态生成 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Google表格管理面板 -->
+      <div id="sheetsSection" class="content-section" style="display: none;">
+        <div class="card">
+          <div class="card-header">
+            <h2>Google表格管理</h2>
+            <button onclick="showAddGoogleSheetModal()" class="btn-primary">+ 添加表格</button>
+          </div>
+
+          <div id="googleSheetsList">
+            <!-- 表格列表动态生成 -->
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <!-- 添加账号弹窗 -->
@@ -190,23 +241,17 @@
         <div class="form-group" id="passwordGroup">
           <label>账号密码:</label>
           <input type="password" id="accountPassword" placeholder="平台登录密码">
-          <small style="color: #999; display: block; margin-top: 5px;">
-            某些平台需要密码进行自动登录
-          </small>
+          <small>某些平台需要密码进行自动登录</small>
         </div>
         <div class="form-group" id="apiTokenGroup" style="display: none;">
           <label>API Token:</label>
           <input type="text" id="apiToken" placeholder="API Token（在平台后台获取）">
-          <small style="color: #999; display: block; margin-top: 5px;">
-            <span id="apiTokenHint">LinkBux、Rewardoo、LinkHaitao和PartnerMatic平台使用API Token采集，无需密码</span>
-          </small>
+          <small id="apiTokenHint">LinkBux、Rewardoo、LinkHaitao和PartnerMatic平台使用API Token采集，无需密码</small>
         </div>
         <div class="form-group">
           <label>联盟序号（可选）:</label>
           <input type="text" id="affiliateName" placeholder="例如: LH1, PM1, PM4, LB1" maxlength="10">
-          <small style="color: #999; display: block; margin-top: 5px;">
-            用于区分同平台的多个账号，如 LH1、LH2、PM1、LB1 等
-          </small>
+          <small>用于区分同平台的多个账号，如 LH1、LH2、PM1、LB1 等</small>
         </div>
         <button type="submit" class="btn-primary">添加</button>
       </form>
@@ -227,9 +272,7 @@
         <div class="form-group">
           <label>表格URL:</label>
           <input type="url" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/..." required>
-          <small style="color: #999; display: block; margin-top: 5px;">
-            提示: 请确保表格已设置为"任何人可查看"
-          </small>
+          <small>提示: 请确保表格已设置为"任何人可查看"</small>
         </div>
         <div class="form-group">
           <label>备注（可选）:</label>
@@ -241,6 +284,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app-v2.js"></script>
 </body>
 </html>
