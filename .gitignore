@@ -12,6 +12,7 @@ data.db
 # 日志文件
 *.log
 npm-debug.log*
+logs/
 
 # 临时文件
 temp_captcha.png
