@@ -1,8 +1,11 @@
 {
-  "name": "affiliate-metrics-test",
+  "name": "affiliate-marketing-saas",
   "version": "1.0.0",
-  "description": "测试联盟营销数据采集",
-  "main": "test-linkhaitao.js",
+  "description": "联盟营销数据采集系统 - 多用户SaaS版",
+  "main": "server-v2.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server-v2.js",
     "start:v1": "node server.js",
