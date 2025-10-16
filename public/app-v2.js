@@ -811,29 +811,29 @@ function displayMerchantSummary(summary) {
 
     // ROI (Return On Investment) = (总佣金 - 广告费) / 广告费 * 100%
     let roi = '0.00';
-    let roiColor = '#999';
+    let roiColor = '#4ade80';  // 默认绿色
     if (cost > 0) {
       const roiValue = ((commission - cost) / cost * 100);
       roi = roiValue.toFixed(2);
-      // ROI颜色：正数绿色，负数红色
-      roiColor = roiValue >= 0 ? '#28a745' : '#dc3545';
+      // 🔥 ROI颜色：>=0绿色，<0红色
+      roiColor = roiValue >= 0 ? '#4ade80' : '#f87171';
     }
 
     const row = tbody.insertRow();
     row.innerHTML = `
-      <td>${index + 1}</td>
-      <td style="background: #f0f4ff; font-size: 12px;" title="${merchant.campaign_names || '-'}">${campaignDisplay}</td>
-      <td><strong>${merchant.merchant_id || '-'}</strong></td>
-      <td style="background: #f0f4ff;">$${(merchant.total_budget || 0).toFixed(2)}</td>
-      <td style="background: #f0f4ff;">${(merchant.total_impressions || 0).toLocaleString()}</td>
-      <td style="background: #f0f4ff;">${clicks.toLocaleString()}</td>
-      <td style="background: #f0f4ff;"><strong style="color: #dc3545;">$${cost.toFixed(2)}</strong></td>
-      <td>${orders}</td>
-      <td><strong style="color: #667eea;">$${commission.toFixed(2)}</strong></td>
-      <td style="background: #e8f5e9;"><strong>${cr}%</strong></td>
-      <td style="background: #e8f5e9;"><strong>$${epc}</strong></td>
-      <td style="background: #e8f5e9;"><strong>$${cpc}</strong></td>
-      <td style="background: #e8f5e9;"><strong style="color: ${roiColor};">${roi}%</strong></td>
+      <td style="color: #a0a0a0;">${index + 1}</td>
+      <td style="background: rgba(59, 130, 246, 0.1); font-size: 12px; color: #60a5fa;" title="${merchant.campaign_names || '-'}">${campaignDisplay}</td>
+      <td><strong style="color: #fbbf24;">${merchant.merchant_id || '-'}</strong></td>
+      <td style="background: rgba(59, 130, 246, 0.1); color: #93c5fd;">$${(merchant.total_budget || 0).toFixed(2)}</td>
+      <td style="background: rgba(59, 130, 246, 0.1); color: #93c5fd;">${(merchant.total_impressions || 0).toLocaleString()}</td>
+      <td style="background: rgba(59, 130, 246, 0.1); color: #93c5fd;">${clicks.toLocaleString()}</td>
+      <td style="background: rgba(59, 130, 246, 0.1);"><strong style="color: #f87171;">$${cost.toFixed(2)}</strong></td>
+      <td style="color: #e5e7eb;">${orders}</td>
+      <td><strong style="color: #a78bfa;">$${commission.toFixed(2)}</strong></td>
+      <td style="background: rgba(34, 197, 94, 0.1);"><strong style="color: #4ade80;">${cr}%</strong></td>
+      <td style="background: rgba(34, 197, 94, 0.1);"><strong style="color: #4ade80;">$${epc}</strong></td>
+      <td style="background: rgba(34, 197, 94, 0.1);"><strong style="color: #4ade80;">$${cpc}</strong></td>
+      <td style="background: rgba(34, 197, 94, 0.1);"><strong style="color: ${roiColor >= 0 ? '#4ade80' : '#f87171'};">${roi}%</strong></td>
     `;
   });
 

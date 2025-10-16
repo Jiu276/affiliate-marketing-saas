@@ -1624,19 +1624,20 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       console.log('样例商家:', orderSummary[0]);
     }
 
-    // 第二步：获取广告数据汇总（按merchant_slug + affiliate_name分组）
+    // 第二步：获取广告数据汇总（按campaign_name分组，而不是按merchant_slug分组）
+    // 这样可以确保每个广告系列单独显示一行，而不会被错误地合并累加
     // 注意：预算是每日预算，不累加，只取结束日期那天的值
+    // 重要：需要根据选中的平台账号过滤affiliate_name
     let adsQuery = `
       SELECT
         merchant_id,
         merchant_slug,
         affiliate_name,
-        GROUP_CONCAT(DISTINCT campaign_name) as campaign_names,
+        campaign_name as campaign_names,
         (
           SELECT campaign_budget
           FROM google_ads_data AS inner_ads
-          WHERE inner_ads.merchant_slug = google_ads_data.merchant_slug
-            AND inner_ads.affiliate_name = google_ads_data.affiliate_name
+          WHERE inner_ads.campaign_name = google_ads_data.campaign_name
             AND inner_ads.user_id = google_ads_data.user_id
             ${endDate ? `AND inner_ads.date = '${endDate}'` : ''}
           LIMIT 1
@@ -1659,7 +1660,31 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       adsParams.push(endDate);
     }
 
-    adsQuery += ' GROUP BY merchant_slug, affiliate_name';
+    // 🔥 新增：根据选中的平台账号过滤affiliate_name（转小写比较）
+    if (platformAccountIds) {
+      const accountIds = platformAccountIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      if (accountIds.length > 0) {
+        // 查询这些账号的affiliate_name并转为小写
+        const placeholders = accountIds.map(() => '?').join(',');
+        const selectedAffiliateNames = db.prepare(`
+          SELECT DISTINCT affiliate_name FROM platform_accounts
+          WHERE id IN (${placeholders}) AND user_id = ?
+        `).all(...accountIds, req.user.id)
+          .map(row => row.affiliate_name)
+          .filter(name => name)
+          .map(name => name.toLowerCase());  // 🔥 统一转小写
+
+        if (selectedAffiliateNames.length > 0) {
+          // 使用LOWER()函数进行不区分大小写的比较
+          const affiliatePlaceholders = selectedAffiliateNames.map(() => '?').join(',');
+          adsQuery += ` AND LOWER(affiliate_name) IN (${affiliatePlaceholders})`;
+          adsParams.push(...selectedAffiliateNames);
+          console.log(`📊 过滤广告数据：只显示 affiliate_name 为 [${selectedAffiliateNames.join(', ')}] 的数据`);
+        }
+      }
+    }
+
+    adsQuery += ' GROUP BY campaign_name, affiliate_name';
 
     const adsSummary = db.prepare(adsQuery).all(...adsParams);
     console.log(`📊 广告数据查询结果: ${adsSummary.length} 个商家`);
@@ -1683,31 +1708,74 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       }
     });
 
-    // 合并订单汇总和广告数据，只保留有广告数据的商家（同时匹配merchant_slug和affiliate_name）
-    const mergedSummary = orderSummary
-      .map(order => {
-        // 使用复合键匹配：merchant_slug + affiliate_name（统一转小写）
-        const key = `${order.merchant_slug}_${(order.affiliate_name || '').toLowerCase()}`;
-        const adsData = adsMap.get(key);
+    // ========== 改进：以广告数据为主，合并订单数据（订单可以为0） ==========
+    const mergedSummary = [];
 
-        // 如果该商家没有匹配的广告数据，返回null（稍后过滤掉）
-        if (!adsData || !adsData.campaign_names) {
-          console.log(`⚠️  订单商家 ${order.merchant_slug}(${order.affiliate_name}) 没有匹配的广告数据，已过滤`);
-          return null;
-        }
+    // 遍历所有广告数据
+    adsSummary.forEach(ads => {
+      if (!ads.merchant_slug || !ads.affiliate_name) {
+        return; // 跳过无效数据
+      }
 
-        return {
-          ...order,
-          campaign_names: adsData.campaign_names,
-          total_budget: adsData.total_budget,
-          total_impressions: adsData.total_impressions,
-          total_clicks: adsData.total_clicks,
-          total_cost: adsData.total_cost
-        };
-      })
-      .filter(item => item !== null); // 过滤掉没有广告数据的商家
+      // 构建复合键
+      const key = `${ads.merchant_slug}_${(ads.affiliate_name || '').toLowerCase()}`;
 
-    console.log(`📊 最终合并结果: ${mergedSummary.length} 个商家（有广告数据）`);
+      // 查找对应的订单数据
+      const matchingOrder = orderSummary.find(order => {
+        const orderKey = `${order.merchant_slug}_${(order.affiliate_name || '').toLowerCase()}`;
+        return orderKey === key;
+      });
+
+      if (matchingOrder) {
+        // 有订单数据，合并
+        mergedSummary.push({
+          merchant_id: matchingOrder.merchant_id,
+          merchant_name: matchingOrder.merchant_name,
+          merchant_slug: matchingOrder.merchant_slug,
+          affiliate_name: matchingOrder.affiliate_name,
+          order_count: matchingOrder.order_count,
+          total_amount: matchingOrder.total_amount,
+          total_commission: matchingOrder.total_commission,
+          confirmed_commission: matchingOrder.confirmed_commission,
+          pending_commission: matchingOrder.pending_commission,
+          rejected_commission: matchingOrder.rejected_commission,
+          campaign_names: ads.campaign_names,
+          total_budget: ads.total_budget,
+          total_impressions: ads.total_impressions,
+          total_clicks: ads.total_clicks,
+          total_cost: ads.total_cost
+        });
+      } else {
+        // 没有订单数据，但有广告数据，订单相关字段设为0
+        mergedSummary.push({
+          merchant_id: ads.merchant_id,
+          merchant_name: '', // 广告数据中没有merchant_name
+          merchant_slug: ads.merchant_slug,
+          affiliate_name: ads.affiliate_name,
+          order_count: 0,
+          total_amount: 0,
+          total_commission: 0,
+          confirmed_commission: 0,
+          pending_commission: 0,
+          rejected_commission: 0,
+          campaign_names: ads.campaign_names,
+          total_budget: ads.total_budget,
+          total_impressions: ads.total_impressions,
+          total_clicks: ads.total_clicks,
+          total_cost: ads.total_cost
+        });
+        console.log(`ℹ️  广告系列 ${ads.campaign_names}(${ads.affiliate_name}) 没有订单，显示为0`);
+      }
+    });
+
+    console.log(`📊 最终合并结果: ${mergedSummary.length} 个商家（包含所有有广告数据的商家）`);
+
+    // 🔥 按ROI从大到小排序
+    mergedSummary.sort((a, b) => {
+      const roiA = a.total_cost > 0 ? ((a.total_commission - a.total_cost) / a.total_cost * 100) : -Infinity;
+      const roiB = b.total_cost > 0 ? ((b.total_commission - b.total_cost) / b.total_cost * 100) : -Infinity;
+      return roiB - roiA;  // 降序排列
+    });
 
     res.json({ success: true, data: mergedSummary });
   } catch (error) {
