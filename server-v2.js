@@ -613,14 +613,14 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
       const insertStmt = db.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
-         order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         order_amount, commission, status, order_date, affiliate_name, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -653,6 +653,7 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
               orderAmount,
               merchantName,
               generateMerchantSlug(merchantName),
+              account.affiliate_name || null,
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -675,6 +676,7 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
             commission,
             status,
             orderDate,
+            account.affiliate_name || null,
             JSON.stringify(orderData.rawData)
           );
           newCount++;
@@ -778,7 +780,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       orders.forEach(order => {
         // 字段映射（PM新API格式）
         const orderId = order.order_id;
-        const merchantId = order.mcid;  // 商家ID
+        const merchantId = order.brand_id;  // 商家ID (使用brand_id而不是mcid)
         const merchantName = order.merchant_name;
         const orderAmount = parseFloat(order.sale_amount || 0);
         const commission = parseFloat(order.sale_comm || 0);
@@ -869,14 +871,14 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       const insertStmt = db.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
-         order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         order_amount, commission, status, order_date, affiliate_name, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -909,6 +911,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
               orderAmount,
               merchantName,
               generateMerchantSlug(merchantName),
+              account.affiliate_name || null,
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -931,6 +934,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
             commission,
             status,
             orderDate,
+            account.affiliate_name || null,
             JSON.stringify(orderData.rawData)
           );
           newCount++;
@@ -1109,14 +1113,14 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
       const insertStmt = db.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
-         order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         order_amount, commission, status, order_date, affiliate_name, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -1149,6 +1153,7 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
               orderAmount,
               merchantName,
               generateMerchantSlug(merchantName),
+              account.affiliate_name || null,
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -1171,6 +1176,7 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
             commission,
             status,
             orderDate,
+            account.affiliate_name || null,
             JSON.stringify(orderData.rawData)
           );
           newCount++;
@@ -1360,14 +1366,14 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
       const insertStmt = db.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
-         order_amount, commission, status, order_date, raw_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         order_amount, commission, status, order_date, affiliate_name, raw_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const updateStmt = db.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
-            merchant_name = ?, merchant_slug = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
+            merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
 
@@ -1396,6 +1402,7 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
               orderAmount,
               merchantName,
               generateMerchantSlug(merchantName),
+              account.affiliate_name || null,
               JSON.stringify(orderData.rawData),
               existingOrder.id
             );
@@ -1416,6 +1423,7 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
             commission,
             status,
             orderDate,
+            account.affiliate_name || null,
             JSON.stringify(orderData.rawData)
           );
           newCount++;
@@ -1616,7 +1624,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       }
     }
 
-    orderQuery += ' GROUP BY o.merchant_slug, o.merchant_name, pa.affiliate_name ORDER BY total_commission DESC';
+    orderQuery += ' GROUP BY o.merchant_id, o.merchant_name, pa.affiliate_name ORDER BY total_commission DESC';
 
     const orderSummary = db.prepare(orderQuery).all(...orderParams);
     console.log(`📊 订单汇总查询结果: ${orderSummary.length} 个商家`);
@@ -1624,27 +1632,20 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       console.log('样例商家:', orderSummary[0]);
     }
 
-    // 第二步：获取广告数据汇总（按campaign_name分组，而不是按merchant_slug分组）
-    // 这样可以确保每个广告系列单独显示一行，而不会被错误地合并累加
-    // 注意：预算是每日预算，不累加，只取结束日期那天的值
-    // 重要：需要根据选中的平台账号过滤affiliate_name
+    // 第二步：获取广告数据汇总（按merchant_slug + affiliate_name分组）
+    // 预算取结束日期当天的值，展示/点击/广告费取日期范围内累计
+    // 重要：人民币广告费需要按7.15汇率转换成美元
     let adsQuery = `
       SELECT
         merchant_id,
         merchant_slug,
         affiliate_name,
-        campaign_name as campaign_names,
-        (
-          SELECT campaign_budget
-          FROM google_ads_data AS inner_ads
-          WHERE inner_ads.campaign_name = google_ads_data.campaign_name
-            AND inner_ads.user_id = google_ads_data.user_id
-            ${endDate ? `AND inner_ads.date = '${endDate}'` : ''}
-          LIMIT 1
-        ) as total_budget,
+        GROUP_CONCAT(DISTINCT campaign_name) as campaign_names,
+        ${endDate ? `MAX(CASE WHEN date = '${endDate}' THEN campaign_budget END)` : 'MAX(campaign_budget)'} as total_budget,
+        ${endDate ? `MAX(CASE WHEN date = '${endDate}' THEN currency END)` : 'MAX(currency)'} as currency,
         SUM(impressions) as total_impressions,
         SUM(clicks) as total_clicks,
-        SUM(cost) as total_cost
+        SUM(CASE WHEN currency = 'CNY' THEN cost / 7.15 ELSE cost END) as total_cost
       FROM google_ads_data
       WHERE user_id = ?
     `;
@@ -1684,7 +1685,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       }
     }
 
-    adsQuery += ' GROUP BY campaign_name, affiliate_name';
+    adsQuery += ' GROUP BY merchant_id, affiliate_name';
 
     const adsSummary = db.prepare(adsQuery).all(...adsParams);
     console.log(`📊 广告数据查询结果: ${adsSummary.length} 个商家`);
@@ -1692,12 +1693,12 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       console.log('样例广告商家:', adsSummary[0]);
     }
 
-    // 第三步：合并数据（使用merchant_slug + affiliate_name作为复合键）
+    // 第三步：合并数据（使用merchant_id + affiliate_name作为复合键）
     const adsMap = new Map();
     adsSummary.forEach(ads => {
-      if (ads.merchant_slug && ads.affiliate_name) {
-        // 使用 merchant_slug + affiliate_name 作为复合键（统一转小写比较）
-        const key = `${ads.merchant_slug}_${(ads.affiliate_name || '').toLowerCase()}`;
+      if (ads.merchant_id && ads.affiliate_name) {
+        // 使用 merchant_id + affiliate_name 作为复合键（统一转小写比较）
+        const key = `${ads.merchant_id}_${(ads.affiliate_name || '').toLowerCase()}`;
         adsMap.set(key, {
           campaign_names: ads.campaign_names || '',
           total_budget: ads.total_budget || 0,
@@ -1713,16 +1714,16 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
 
     // 遍历所有广告数据
     adsSummary.forEach(ads => {
-      if (!ads.merchant_slug || !ads.affiliate_name) {
+      if (!ads.merchant_id || !ads.affiliate_name) {
         return; // 跳过无效数据
       }
 
       // 构建复合键
-      const key = `${ads.merchant_slug}_${(ads.affiliate_name || '').toLowerCase()}`;
+      const key = `${ads.merchant_id}_${(ads.affiliate_name || '').toLowerCase()}`;
 
       // 查找对应的订单数据
       const matchingOrder = orderSummary.find(order => {
-        const orderKey = `${order.merchant_slug}_${(order.affiliate_name || '').toLowerCase()}`;
+        const orderKey = `${order.merchant_id}_${(order.affiliate_name || '').toLowerCase()}`;
         return orderKey === key;
       });
 
@@ -1966,6 +1967,9 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
       WHERE id = ?
     `);
 
+    // 🔥 新增：在内存中先去重（相同campaign_name + 相同date = 重复）
+    const uniqueDataMap = new Map();  // 键: "campaignName|date", 值: 行数据
+
     // 解析每一行数据
     for (const line of dataLines) {
       if (!line.trim()) continue;
@@ -1988,8 +1992,37 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
 
       if (!date || !campaignName) continue; // 必填字段检查
 
+      // 🔥 去重关键：生成唯一键（campaign_name + date）
+      const uniqueKey = `${campaignName}|${date}`;
+
+      // 🔥 如果表格中已经遇到过相同的campaign_name+date，跳过（CSV内部去重）
+      if (uniqueDataMap.has(uniqueKey)) {
+        console.log(`⚠️  跳过重复数据: ${campaignName}, 日期: ${date} (CSV表格内有重复行)`);
+        skippedCount++;
+        continue;
+      }
+
       // 提取联盟名称、商家编号和商家标识符
       const { affiliateName, merchantId, merchantSlug } = extractCampaignInfo(campaignName);
+
+      // 存入Map，避免CSV内部重复
+      uniqueDataMap.set(uniqueKey, {
+        campaignName,
+        date,
+        budget,
+        currency,
+        impressions,
+        clicks,
+        cost,
+        affiliateName,
+        merchantId,
+        merchantSlug
+      });
+    }
+
+    // 🔥 遍历去重后的唯一数据，插入/更新数据库
+    uniqueDataMap.forEach(data => {
+      const { campaignName, date, budget, currency, impressions, clicks, cost, affiliateName, merchantId, merchantSlug } = data;
 
       // 增量更新逻辑：只更新今天的数据
       if (date === today) {
@@ -2041,7 +2074,7 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
           skippedCount++;
         }
       }
-    }
+    });
 
     const message = `采集完成：新增 ${newCount} 条，更新 ${updatedCount} 条，跳过 ${skippedCount} 条`;
     console.log(`✅ ${message}`);
