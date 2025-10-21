@@ -15,7 +15,10 @@ const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 
-const { db, initDatabase } = require('./db');
+// 根据环境选择数据库配置
+const { db, initDatabase } = process.env.NODE_ENV === 'production' 
+  ? require('./db-railway') 
+  : require('./db');
 const {
   hashPassword,
   verifyPassword,

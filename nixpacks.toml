@@ -1,11 +1,8 @@
 [phases.setup]
-nixPkgs = ["nodejs_18", "python3", "gcc", "g++", "make", "pkg-config"]
+nixPkgs = ["nodejs_18"]
 
 [phases.install]
-cmds = [
-  "npm config set python python3",
-  "npm ci --omit=dev --build-from-source=better-sqlite3"
-]
+cmds = ["npm ci --omit=dev"]
 
 [phases.build]
 
