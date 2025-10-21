@@ -4,7 +4,7 @@
  */
 
 module.exports = {
-  up: (db) => {
+  up: (db, callback) => {
     console.log('⬆️  执行迁移: 添加 affiliate_name 到 orders 表');
 
     // 1. 添加 affiliate_name 字段
@@ -26,9 +26,11 @@ module.exports = {
     `).run();
 
     console.log('✅ 迁移成功: affiliate_name 字段已添加到 orders 表');
+    
+    if (callback) callback();
   },
 
-  down: (db) => {
+  down: (db, callback) => {
     console.log('⬇️  回滚迁移: 移除 orders 表的 affiliate_name 字段');
 
     // SQLite 不支持 DROP COLUMN,需要重建表
@@ -50,5 +52,7 @@ module.exports = {
     `).run();
 
     console.log('✅ 回滚成功');
+    
+    if (callback) callback();
   }
 };

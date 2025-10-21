@@ -4,7 +4,7 @@
 /**
  * 向上迁移 - 应用此migration
  */
-function up(db) {
+function up(db, callback) {
   console.log('  创建基线Schema...');
 
   // 用户表
@@ -151,12 +151,14 @@ function up(db) {
   `);
 
   console.log('  ✅ 基线Schema创建完成');
+  
+  if (callback) callback();
 }
 
 /**
  * 向下迁移 - 回滚此migration
  */
-function down(db) {
+function down(db, callback) {
   console.log('  回滚基线Schema...');
 
   // 删除所有表（按依赖顺序倒序删除）
@@ -175,6 +177,8 @@ function down(db) {
   });
 
   console.log('  ✅ 基线Schema回滚完成');
+  
+  if (callback) callback();
 }
 
 module.exports = { up, down };

@@ -4,7 +4,7 @@
 /**
  * 向上迁移 - 应用此migration
  */
-function up(db) {
+function up(db, callback) {
   console.log('  修改platform_accounts表，允许account_password为NULL...');
 
   // SQLite不支持直接ALTER COLUMN，需要重建表
@@ -42,12 +42,14 @@ function up(db) {
   `);
 
   console.log('  ✅ account_password字段已修改为可为NULL');
+  
+  if (callback) callback();
 }
 
 /**
  * 向下迁移 - 回滚此migration
  */
-function down(db) {
+function down(db, callback) {
   console.log('  回滚account_password字段修改...');
 
   // 回滚：恢复NOT NULL约束
@@ -86,6 +88,8 @@ function down(db) {
   `);
 
   console.log('  ✅ account_password字段已回滚为NOT NULL');
+  
+  if (callback) callback();
 }
 
 module.exports = { up, down };

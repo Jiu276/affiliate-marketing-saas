@@ -4,7 +4,7 @@
 /**
  * 向上迁移 - 应用此migration
  */
-function up(db) {
+function up(db, callback) {
   console.log('  添加merchant_slug字段到orders表...');
 
   // 添加merchant_slug字段
@@ -20,12 +20,14 @@ function up(db) {
   `);
 
   console.log('  ✅ merchant_slug字段添加完成');
+  
+  if (callback) callback();
 }
 
 /**
  * 向下迁移 - 回滚此migration
  */
-function down(db) {
+function down(db, callback) {
   console.log('  移除merchant_slug字段...');
 
   // SQLite不支持直接删除列，需要重建表
@@ -77,6 +79,8 @@ function down(db) {
   `);
 
   console.log('  ✅ merchant_slug字段移除完成');
+  
+  if (callback) callback();
 }
 
 module.exports = { up, down };
