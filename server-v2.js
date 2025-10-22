@@ -762,6 +762,8 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
     }
 
     console.log('📥 开始采集PM订单...');
+    console.log('PM Token:', pmToken);
+    console.log('日期范围:', startDate, '到', endDate);
 
     // 构建POST请求（使用新API接口）
     const response = await axios.post(
@@ -781,6 +783,9 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
         }
       }
     );
+
+    console.log('PM API响应状态:', response.status);
+    console.log('PM API响应数据:', JSON.stringify(response.data, null, 2));
 
     // PM新API响应格式：{ code: "0", message: "success", data: { total, list: [...] } }
     const isSuccess = response.data.code === '0' && response.data.data;
