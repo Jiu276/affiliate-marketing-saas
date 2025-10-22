@@ -1,5 +1,6 @@
 // 多用户SaaS系统前端逻辑
-const API_BASE = 'http://localhost:3000/api';
+// 自动检测当前域名，支持本地开发和部署环境
+const API_BASE = window.location.origin + '/api';
 let authToken = null;
 let currentUser = null;
 let platformAccounts = [];
