@@ -115,6 +115,7 @@ function runMigration(db, migration) {
 // 运行所有待执行的migrations
 async function runPendingMigrations(db) {
   try {
+    // 首先初始化migration系统
     await initMigrationSystem(db);
     
     const currentVersion = await getCurrentVersion(db);

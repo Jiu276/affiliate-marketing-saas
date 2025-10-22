@@ -17,7 +17,7 @@ require('dotenv').config();
 
 // 根据环境选择数据库配置
 const { db, initDatabase } = process.env.NODE_ENV === 'production' 
-  ? require('./db-railway') 
+  ? require('./db-simple') 
   : require('./db');
 const {
   hashPassword,
@@ -33,7 +33,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 初始化数据库
-initDatabase();
+initDatabase().catch(error => {
+  console.error('❌ 数据库初始化失败:', error);
+  process.exit(1);
+});
 
 // 中间件
 app.use(cors());
