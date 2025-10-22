@@ -209,7 +209,7 @@ app.post('/api/platform-accounts', authenticateToken, (req, res) => {
  */
 app.get('/api/platform-accounts', authenticateToken, (req, res) => {
   try {
-    const accounts = db
+    const accounts = dbAdapter
       .prepare(
         'SELECT id, platform, account_name, affiliate_name, is_active, created_at FROM platform_accounts WHERE user_id = ?'
       )
@@ -1876,7 +1876,7 @@ app.post('/api/google-sheets', authenticateToken, (req, res) => {
  */
 app.get('/api/google-sheets', authenticateToken, (req, res) => {
   try {
-    const sheets = db
+    const sheets = dbAdapter
       .prepare('SELECT * FROM google_sheets WHERE user_id = ? ORDER BY created_at DESC')
       .all(req.user.id);
 
