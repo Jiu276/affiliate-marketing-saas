@@ -153,7 +153,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
  * API: 添加平台账号
  * POST /api/platform-accounts
  */
-app.post('/api/platform-accounts', authenticateToken, (req, res) => {
+app.post('/api/platform-accounts', authenticateToken, async (req, res) => {
   try {
     const { platform, accountName, accountPassword, affiliateName, apiToken } = req.body;
 
@@ -180,10 +180,19 @@ app.post('/api/platform-accounts', authenticateToken, (req, res) => {
       }
     }
 
+    // 检查是否已存在相同的平台账号
+    const existingAccount = await dbAdapter
+      .prepare('SELECT id FROM platform_accounts WHERE user_id = ? AND platform = ? AND account_name = ?')
+      .get(req.user.id, platform, accountName);
+
+    if (existingAccount) {
+      return res.json({ success: false, message: '该平台账号已存在' });
+    }
+
     // 加密密码（如果有）
     const encryptedPassword = accountPassword ? encryptPassword(accountPassword) : null;
 
-    const result = db
+    const result = await dbAdapter
       .prepare(
         'INSERT INTO platform_accounts (user_id, platform, account_name, account_password, affiliate_name, api_token) VALUES (?, ?, ?, ?, ?, ?)'
       )
@@ -192,7 +201,7 @@ app.post('/api/platform-accounts', authenticateToken, (req, res) => {
     res.json({
       success: true,
       message: '平台账号添加成功',
-      data: { id: result.lastInsertRowid, platform, accountName, affiliateName },
+      data: { id: result.lastID, platform, accountName, affiliateName },
     });
   } catch (error) {
     if (error.message.includes('UNIQUE')) {
