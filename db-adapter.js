@@ -9,7 +9,7 @@ class DatabaseAdapter {
   // 模拟 better-sqlite3 的 prepare 方法
   prepare(sql) {
     return {
-      get: (params) => {
+      get: (...params) => {
         return new Promise((resolve, reject) => {
           this.db.get(sql, params, (err, row) => {
             if (err) {
@@ -31,7 +31,7 @@ class DatabaseAdapter {
           });
         });
       },
-      all: (params) => {
+      all: (...params) => {
         return new Promise((resolve, reject) => {
           this.db.all(sql, params, (err, rows) => {
             if (err) {
