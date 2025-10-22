@@ -1,6 +1,7 @@
 // 简化版数据库配置 - 直接创建表结构，避免复杂的迁移系统
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const DatabaseAdapter = require('./db-adapter');
 
 // 在 Railway 上使用内存数据库，避免文件系统权限问题
 const DB_PATH = process.env.NODE_ENV === 'production' ? ':memory:' : path.join(__dirname, 'data.db');
@@ -242,5 +243,8 @@ async function initDatabase() {
   }
 }
 
-// 导出数据库实例
-module.exports = { db, initDatabase };
+// 创建数据库适配器
+const dbAdapter = new DatabaseAdapter(db);
+
+// 导出数据库实例和适配器
+module.exports = { db, dbAdapter, initDatabase };

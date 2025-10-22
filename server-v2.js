@@ -16,7 +16,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 // 根据环境选择数据库配置
-const { db, initDatabase } = process.env.NODE_ENV === 'production' 
+const { db, dbAdapter, initDatabase } = process.env.NODE_ENV === 'production' 
   ? require('./db-simple') 
   : require('./db');
 const {
@@ -76,23 +76,23 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     // 检查邮箱是否已存在
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existingUser = await dbAdapter.prepare('SELECT id FROM users WHERE email = ?').get(email);
     if (existingUser) {
       return res.json({ success: false, message: '该邮箱已被注册' });
     }
 
     // 创建用户
     const passwordHash = await hashPassword(password);
-    const result = db
+    const result = await dbAdapter
       .prepare('INSERT INTO users (email, password_hash, username) VALUES (?, ?, ?)')
       .run(email, passwordHash, username);
 
-    const token = generateToken({ id: result.lastInsertRowid, email, username });
+    const token = generateToken({ id: result.lastID, email, username });
 
     res.json({
       success: true,
       message: '注册成功',
-      data: { token, user: { id: result.lastInsertRowid, email, username } },
+      data: { token, user: { id: result.lastID, email, username } },
     });
   } catch (error) {
     console.error('注册错误:', error);
@@ -112,7 +112,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.json({ success: false, message: '缺少必要参数' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const user = await dbAdapter.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user) {
       return res.json({ success: false, message: '邮箱或密码错误' });
     }
@@ -139,8 +139,8 @@ app.post('/api/auth/login', async (req, res) => {
  * API: 获取当前用户信息
  * GET /api/auth/me
  */
-app.get('/api/auth/me', authenticateToken, (req, res) => {
-  const user = db.prepare('SELECT id, email, username, created_at FROM users WHERE id = ?').get(req.user.id);
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  const user = await dbAdapter.prepare('SELECT id, email, username, created_at FROM users WHERE id = ?').get(req.user.id);
 
   if (!user) {
     return res.json({ success: false, message: '用户不存在' });

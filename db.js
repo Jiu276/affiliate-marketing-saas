@@ -1,6 +1,7 @@
 // SQLite数据库配置和初始化（使用Migration系统）
 const Database = require('better-sqlite3');
 const path = require('path');
+const DatabaseAdapter = require('./db-adapter');
 
 const DB_PATH = path.join(__dirname, 'data.db');
 const db = new Database(DB_PATH);
@@ -29,5 +30,8 @@ function initDatabase() {
   }
 }
 
-// 导出数据库实例
-module.exports = { db, initDatabase };
+// 创建数据库适配器（为开发环境提供统一接口）
+const dbAdapter = new DatabaseAdapter(db);
+
+// 导出数据库实例和适配器
+module.exports = { db, dbAdapter, initDatabase };
