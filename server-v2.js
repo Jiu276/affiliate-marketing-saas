@@ -218,12 +218,15 @@ app.post('/api/platform-accounts', authenticateToken, async (req, res) => {
  */
 app.get('/api/platform-accounts', authenticateToken, (req, res) => {
   try {
+    console.log('获取平台账号请求，用户ID:', req.user.id);
     const accounts = dbAdapter
       .prepare(
         'SELECT id, platform, account_name, affiliate_name, is_active, created_at FROM platform_accounts WHERE user_id = ?'
       )
       .all(req.user.id);
 
+    console.log('查询到的账号数量:', accounts.length);
+    console.log('账号数据:', accounts);
     res.json({ success: true, data: accounts });
   } catch (error) {
     console.error('获取平台账号错误:', error);
