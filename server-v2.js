@@ -765,24 +765,62 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
     console.log('PM Token:', pmToken);
     console.log('日期范围:', startDate, '到', endDate);
 
-    // 构建POST请求（使用新API接口）
-    const response = await axios.post(
-      'https://api.partnermatic.com/api/transaction',
-      {
-        source: 'partnermatic',
-        token: pmToken,
-        dataScope: 'user',
-        beginDate: startDate,
-        endDate: endDate,
-        curPage: 1,
-        perPage: 2000
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
+    // 尝试不同的API接口路径
+    const apiEndpoints = [
+      'https://api.partnermatic.com/api/transactions',
+      'https://api.partnermatic.com/api/orders',
+      'https://api.partnermatic.com/api/reports',
+      'https://api.partnermatic.com/api/data'
+    ];
+
+    let response = null;
+    let lastError = null;
+
+    // 尝试每个API端点
+    for (const endpoint of apiEndpoints) {
+      try {
+        console.log(`尝试API端点: ${endpoint}`);
+        
+        response = await axios.post(
+          endpoint,
+          {
+            source: 'partnermatic',
+            token: pmToken,
+            dataScope: 'user',
+            beginDate: startDate,
+            endDate: endDate,
+            curPage: 1,
+            perPage: 2000
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        console.log(`${endpoint} 响应状态:`, response.status);
+        console.log(`${endpoint} 响应数据:`, JSON.stringify(response.data, null, 2));
+
+        // 如果响应成功且包含数据，跳出循环
+        if (response.data && (response.data.code === '0' || response.data.success || response.data.data)) {
+          console.log(`✅ 成功使用API端点: ${endpoint}`);
+          break;
         }
+      } catch (error) {
+        console.log(`❌ ${endpoint} 失败:`, error.message);
+        lastError = error;
+        response = null;
       }
-    );
+    }
+
+    // 如果所有端点都失败
+    if (!response) {
+      return res.json({
+        success: false,
+        message: `所有API端点都失败，最后错误: ${lastError ? lastError.message : '未知错误'}`
+      });
+    }
 
     console.log('PM API响应状态:', response.status);
     console.log('PM API响应数据:', JSON.stringify(response.data, null, 2));
