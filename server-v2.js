@@ -216,10 +216,10 @@ app.post('/api/platform-accounts', authenticateToken, async (req, res) => {
  * API: 获取平台账号列表
  * GET /api/platform-accounts
  */
-app.get('/api/platform-accounts', authenticateToken, (req, res) => {
+app.get('/api/platform-accounts', authenticateToken, async (req, res) => {
   try {
     console.log('获取平台账号请求，用户ID:', req.user.id);
-    const accounts = dbAdapter
+    const accounts = await dbAdapter
       .prepare(
         'SELECT id, platform, account_name, affiliate_name, is_active, created_at FROM platform_accounts WHERE user_id = ?'
       )
@@ -1886,9 +1886,9 @@ app.post('/api/google-sheets', authenticateToken, (req, res) => {
  * API: 获取Google表格列表
  * GET /api/google-sheets
  */
-app.get('/api/google-sheets', authenticateToken, (req, res) => {
+app.get('/api/google-sheets', authenticateToken, async (req, res) => {
   try {
-    const sheets = dbAdapter
+    const sheets = await dbAdapter
       .prepare('SELECT * FROM google_sheets WHERE user_id = ? ORDER BY created_at DESC')
       .all(req.user.id);
 
