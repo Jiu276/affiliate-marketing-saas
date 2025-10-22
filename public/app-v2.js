@@ -220,15 +220,20 @@ function showSection(sectionName, event) {
 // 加载平台账号列表
 async function loadPlatformAccounts() {
   try {
+    console.log('开始加载平台账号列表...');
     const response = await fetch(`${API_BASE}/platform-accounts`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
 
     const result = await response.json();
+    console.log('API返回结果:', result);
 
     if (result.success) {
       platformAccounts = result.data;
+      console.log('设置platformAccounts:', platformAccounts);
       renderAccountsList();
+    } else {
+      console.error('API返回失败:', result.message);
     }
   } catch (error) {
     console.error('加载平台账号失败:', error);
@@ -440,9 +445,11 @@ async function handleAddAccount(e) {
 
     if (result.success) {
       showMessage('addAccountStatus', '添加成功！', 'success');
+      console.log('账号添加成功，准备重新加载列表...');
 
       setTimeout(() => {
         closeAddAccountModal();
+        console.log('关闭弹窗，开始重新加载平台账号列表...');
         loadPlatformAccounts();
       }, 1000);
     } else {
