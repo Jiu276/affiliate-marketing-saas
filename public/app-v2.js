@@ -227,10 +227,15 @@ async function loadPlatformAccounts() {
 
     const result = await response.json();
     console.log('API返回结果:', result);
+    console.log('result.data类型:', typeof result.data);
+    console.log('result.data是否为数组:', Array.isArray(result.data));
+    console.log('result.data内容:', result.data);
 
     if (result.success) {
       platformAccounts = result.data;
       console.log('设置platformAccounts:', platformAccounts);
+      console.log('platformAccounts类型:', typeof platformAccounts);
+      console.log('platformAccounts是否为数组:', Array.isArray(platformAccounts));
       renderAccountsList();
     } else {
       console.error('API返回失败:', result.message);
@@ -244,6 +249,13 @@ async function loadPlatformAccounts() {
 function renderAccountsList() {
   console.log('renderAccountsList 被调用, platformAccounts:', platformAccounts);
   const container = document.getElementById('accountsList');
+
+  // 确保 platformAccounts 是数组
+  if (!Array.isArray(platformAccounts)) {
+    console.error('platformAccounts 不是数组:', platformAccounts);
+    container.innerHTML = '<p style="color: #999;">数据格式错误，请刷新页面重试</p>';
+    return;
+  }
 
   if (platformAccounts.length === 0) {
     console.log('没有平台账号');
@@ -878,6 +890,13 @@ async function loadGoogleSheets() {
 // 渲染Google表格列表
 function renderGoogleSheetsList() {
   const container = document.getElementById('googleSheetsList');
+
+  // 确保 googleSheets 是数组
+  if (!Array.isArray(googleSheets)) {
+    console.error('googleSheets 不是数组:', googleSheets);
+    container.innerHTML = '<p style="color: #999;">数据格式错误，请刷新页面重试</p>';
+    return;
+  }
 
   if (googleSheets.length === 0) {
     container.innerHTML = '<p style="color: #999;">暂无Google表格，请先添加</p>';
