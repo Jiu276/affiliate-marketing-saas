@@ -24,186 +24,175 @@ function createTables() {
   return new Promise((resolve, reject) => {
     console.log('🔧 创建数据库表结构...');
 
-    // 用户表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        username TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        is_active INTEGER DEFAULT 1
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建用户表失败:', err);
-        reject(err);
-        return;
+    const tables = [
+      {
+        name: 'users',
+        sql: `
+          CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            username TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_active INTEGER DEFAULT 1
+          )
+        `
+      },
+      {
+        name: 'platform_accounts',
+        sql: `
+          CREATE TABLE IF NOT EXISTS platform_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            platform TEXT NOT NULL,
+            account_name TEXT NOT NULL,
+            account_password TEXT,
+            affiliate_name TEXT,
+            api_token TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, platform, account_name)
+          )
+        `
+      },
+      {
+        name: 'platform_tokens',
+        sql: `
+          CREATE TABLE IF NOT EXISTS platform_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform_account_id INTEGER NOT NULL,
+            token TEXT NOT NULL,
+            expire_time DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (platform_account_id) REFERENCES platform_accounts(id) ON DELETE CASCADE
+          )
+        `
+      },
+      {
+        name: 'orders',
+        sql: `
+          CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            platform_account_id INTEGER NOT NULL,
+            order_id TEXT NOT NULL,
+            merchant_id TEXT,
+            merchant_name TEXT,
+            merchant_slug TEXT,
+            affiliate_name TEXT,
+            order_amount REAL,
+            commission REAL,
+            status TEXT,
+            order_date DATETIME,
+            confirm_date DATETIME,
+            raw_data TEXT,
+            collected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (platform_account_id) REFERENCES platform_accounts(id) ON DELETE CASCADE,
+            UNIQUE(platform_account_id, order_id)
+          )
+        `
+      },
+      {
+        name: 'collection_jobs',
+        sql: `
+          CREATE TABLE IF NOT EXISTS collection_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            platform_account_id INTEGER NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            total_orders INTEGER DEFAULT 0,
+            total_amount REAL DEFAULT 0,
+            total_commission REAL DEFAULT 0,
+            error_message TEXT,
+            started_at DATETIME,
+            completed_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (platform_account_id) REFERENCES platform_accounts(id) ON DELETE CASCADE
+          )
+        `
+      },
+      {
+        name: 'google_sheets',
+        sql: `
+          CREATE TABLE IF NOT EXISTS google_sheets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            sheet_name TEXT NOT NULL,
+            sheet_url TEXT NOT NULL,
+            sheet_id TEXT NOT NULL,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+          )
+        `
+      },
+      {
+        name: 'google_ads_data',
+        sql: `
+          CREATE TABLE IF NOT EXISTS google_ads_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            sheet_id INTEGER NOT NULL,
+            date DATE NOT NULL,
+            campaign_name TEXT,
+            affiliate_name TEXT,
+            merchant_id TEXT,
+            campaign_budget REAL,
+            currency TEXT,
+            impressions INTEGER,
+            clicks INTEGER,
+            cost REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (sheet_id) REFERENCES google_sheets(id) ON DELETE CASCADE,
+            UNIQUE(sheet_id, date, campaign_name)
+          )
+        `
       }
-      console.log('✅ 用户表创建成功');
-    });
+    ];
 
-    // 平台账号配置表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS platform_accounts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        platform TEXT NOT NULL,
-        account_name TEXT NOT NULL,
-        account_password TEXT,
-        affiliate_name TEXT,
-        api_token TEXT,
-        is_active INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(user_id, platform, account_name)
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建平台账号表失败:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ 平台账号表创建成功');
+    let completedTables = 0;
+    
+    // 创建所有表
+    tables.forEach((table) => {
+      db.run(table.sql, (err) => {
+        if (err) {
+          console.error(`❌ 创建${table.name}表失败:`, err);
+          reject(err);
+          return;
+        }
+        console.log(`✅ ${table.name}表创建成功`);
+        completedTables++;
+        
+        // 所有表创建完成后，创建索引
+        if (completedTables === tables.length) {
+          createIndexes().then(resolve).catch(reject);
+        }
+      });
     });
+  });
+}
 
-    // 平台Token缓存表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS platform_tokens (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        platform_account_id INTEGER NOT NULL,
-        token TEXT NOT NULL,
-        expire_time DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (platform_account_id) REFERENCES platform_accounts(id) ON DELETE CASCADE
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建Token表失败:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ Token表创建成功');
-    });
-
-    // 订单数据表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        platform_account_id INTEGER NOT NULL,
-        order_id TEXT NOT NULL,
-        merchant_id TEXT,
-        merchant_name TEXT,
-        merchant_slug TEXT,
-        affiliate_name TEXT,
-        order_amount REAL,
-        commission REAL,
-        status TEXT,
-        order_date DATETIME,
-        confirm_date DATETIME,
-        raw_data TEXT,
-        collected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (platform_account_id) REFERENCES platform_accounts(id) ON DELETE CASCADE,
-        UNIQUE(platform_account_id, order_id)
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建订单表失败:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ 订单表创建成功');
-    });
-
-    // 采集任务记录表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS collection_jobs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        platform_account_id INTEGER NOT NULL,
-        start_date DATE NOT NULL,
-        end_date DATE NOT NULL,
-        status TEXT DEFAULT 'pending',
-        total_orders INTEGER DEFAULT 0,
-        total_amount REAL DEFAULT 0,
-        total_commission REAL DEFAULT 0,
-        error_message TEXT,
-        started_at DATETIME,
-        completed_at DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (platform_account_id) REFERENCES platform_accounts(id) ON DELETE CASCADE
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建采集任务表失败:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ 采集任务表创建成功');
-    });
-
-    // Google表格配置表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS google_sheets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        sheet_name TEXT NOT NULL,
-        sheet_url TEXT NOT NULL,
-        sheet_id TEXT NOT NULL,
-        description TEXT,
-        is_active INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建Google表格表失败:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ Google表格表创建成功');
-    });
-
-    // Google广告数据表
-    db.run(`
-      CREATE TABLE IF NOT EXISTS google_ads_data (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        sheet_id INTEGER NOT NULL,
-        date DATE NOT NULL,
-        campaign_name TEXT,
-        affiliate_name TEXT,
-        merchant_id TEXT,
-        campaign_budget REAL,
-        currency TEXT,
-        impressions INTEGER,
-        clicks INTEGER,
-        cost REAL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (sheet_id) REFERENCES google_sheets(id) ON DELETE CASCADE,
-        UNIQUE(sheet_id, date, campaign_name)
-      )
-    `, (err) => {
-      if (err) {
-        console.error('❌ 创建Google广告数据表失败:', err);
-        reject(err);
-        return;
-      }
-      console.log('✅ Google广告数据表创建成功');
-    });
-
-    // 创建索引
+/**
+ * 创建索引
+ */
+function createIndexes() {
+  return new Promise((resolve, reject) => {
+    console.log('🔧 创建数据库索引...');
+    
     const indexes = [
       'CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id)',
       'CREATE INDEX IF NOT EXISTS idx_orders_platform_account_id ON orders(platform_account_id)',
@@ -220,7 +209,7 @@ function createTables() {
     ];
 
     let completedIndexes = 0;
-    indexes.forEach((indexSQL, i) => {
+    indexes.forEach((indexSQL) => {
       db.run(indexSQL, (err) => {
         if (err) {
           console.error(`❌ 创建索引失败: ${indexSQL}`, err);
