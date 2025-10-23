@@ -181,6 +181,13 @@ app.post('/api/platform-accounts', authenticateToken, async (req, res) => {
     }
 
     // 检查是否已存在相同的平台账号
+    console.log('🔍 添加平台账号调试信息:');
+    console.log('用户ID:', req.user.id);
+    console.log('平台:', platform);
+    console.log('账号名称:', accountName);
+    console.log('联盟序号:', affiliateName);
+    console.log('API Token:', apiToken ? '已提供' : '未提供');
+    
     const existingAccount = await dbAdapter
       .prepare('SELECT id FROM platform_accounts WHERE user_id = ? AND platform = ? AND account_name = ?')
       .get(req.user.id, platform, accountName);
