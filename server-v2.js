@@ -791,9 +791,24 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
         
         // 尝试不同的请求格式
         const requestFormats = [
-          // 格式1: JWT Token在Header中
+          // 格式1: 包含AppId的格式
           {
             data: {
+              appId: 'partnermatic',
+              token: pmToken,
+              beginDate: startDate,
+              endDate: endDate,
+              curPage: 1,
+              perPage: 2000
+            },
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          },
+          // 格式2: JWT Token在Header中
+          {
+            data: {
+              appId: 'partnermatic',
               beginDate: startDate,
               endDate: endDate,
               curPage: 1,
@@ -804,7 +819,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
               'Authorization': `Bearer ${pmToken}`
             }
           },
-          // 格式2: Token在请求体中
+          // 格式3: Token在请求体中
           {
             data: {
               token: pmToken,
@@ -817,7 +832,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
               'Content-Type': 'application/json'
             }
           },
-          // 格式3: 原始格式
+          // 格式4: 原始格式
           {
             data: {
               source: 'partnermatic',
@@ -1111,10 +1126,18 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       const errorMessage = response.data.message || 'PM数据获取失败';
       console.error(`❌ PM API错误: ${errorMessage}`);
 
-      res.json({
-        success: false,
-        message: `PM API错误: ${errorMessage}`,
-      });
+      // 如果是AppId错误，提供更友好的错误信息
+      if (errorMessage.includes('AppId is required')) {
+        res.json({
+          success: false,
+          message: 'PartnerMatic API需要AppId参数，请联系平台获取正确的API配置信息',
+        });
+      } else {
+        res.json({
+          success: false,
+          message: `PM API错误: ${errorMessage}`,
+        });
+      }
     }
   } catch (error) {
     console.error('采集PM订单错误:', error);
