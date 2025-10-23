@@ -1591,7 +1591,7 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
  * API: 获取历史订单
  * GET /api/orders
  */
-app.get('/api/orders', authenticateToken, (req, res) => {
+app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, platformAccountId } = req.query;
 
@@ -1628,7 +1628,7 @@ app.get('/api/orders', authenticateToken, (req, res) => {
  * API: 获取统计数据
  * GET /api/stats
  */
-app.get('/api/stats', authenticateToken, (req, res) => {
+app.get('/api/stats', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, platformAccountId } = req.query;
 
@@ -1672,7 +1672,7 @@ app.get('/api/stats', authenticateToken, (req, res) => {
  * API: 获取商家汇总数据（包含广告数据）
  * GET /api/merchant-summary
  */
-app.get('/api/merchant-summary', authenticateToken, (req, res) => {
+app.get('/api/merchant-summary', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, platformAccountIds } = req.query;
 
@@ -2192,7 +2192,7 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
  * API: 获取Google广告数据
  * GET /api/google-ads-data
  */
-app.get('/api/google-ads-data', authenticateToken, (req, res) => {
+app.get('/api/google-ads-data', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate, sheetId } = req.query;
 
