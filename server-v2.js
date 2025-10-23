@@ -1615,7 +1615,7 @@ app.get('/api/orders', authenticateToken, (req, res) => {
 
     query += ' ORDER BY order_date DESC LIMIT 1000';
 
-    const orders = dbAdapter.prepare(query).all(...params);
+    const orders = await dbAdapter.prepare(query).all(...params);
 
     res.json({ success: true, data: orders });
   } catch (error) {
@@ -1659,7 +1659,7 @@ app.get('/api/stats', authenticateToken, (req, res) => {
       params.push(platformAccountId);
     }
 
-    const stats = dbAdapter.prepare(query).get(...params);
+    const stats = await dbAdapter.prepare(query).get(...params);
 
     res.json({ success: true, data: stats });
   } catch (error) {
@@ -1717,7 +1717,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
 
     orderQuery += ' GROUP BY o.merchant_id, o.merchant_name, pa.affiliate_name ORDER BY total_commission DESC';
 
-    const orderSummary = dbAdapter.prepare(orderQuery).all(...orderParams);
+    const orderSummary = await dbAdapter.prepare(orderQuery).all(...orderParams);
     console.log(`📊 订单汇总查询结果: ${orderSummary.length} 个商家`);
     if (orderSummary.length > 0) {
       console.log('样例商家:', orderSummary[0]);
@@ -1778,7 +1778,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
 
     adsQuery += ' GROUP BY merchant_id, affiliate_name';
 
-    const adsSummary = dbAdapter.prepare(adsQuery).all(...adsParams);
+    const adsSummary = await dbAdapter.prepare(adsQuery).all(...adsParams);
     console.log(`📊 广告数据查询结果: ${adsSummary.length} 个商家`);
     if (adsSummary.length > 0) {
       console.log('样例广告商家:', adsSummary[0]);
@@ -2216,7 +2216,7 @@ app.get('/api/google-ads-data', authenticateToken, (req, res) => {
 
     query += ' ORDER BY date DESC, campaign_name ASC LIMIT 1000';
 
-    const data = dbAdapter.prepare(query).all(...params);
+    const data = await dbAdapter.prepare(query).all(...params);
 
     res.json({ success: true, data: data });
   } catch (error) {
