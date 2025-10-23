@@ -1376,12 +1376,6 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
     console.log('API URL:', apiUrl);
     console.log('请求参数:', params.toString());
 
-    const response = await axios.post(apiUrl, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
-
     console.log('RW API响应状态:', response.status);
     console.log('RW API响应数据:', JSON.stringify(response.data, null, 2));
 
