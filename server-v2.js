@@ -414,7 +414,7 @@ async function getLHToken(platformAccountId) {
   const loginResult = await autoLoginLH(account.account_name, accountPassword);
 
   // 保存新token
-  db.prepare(
+  await dbAdapter.prepare(
     'INSERT INTO platform_tokens (platform_account_id, token, expire_time) VALUES (?, ?, ?)'
   ).run(platformAccountId, loginResult.token, loginResult.expireTime);
 
@@ -455,7 +455,7 @@ app.post('/api/collect-orders', authenticateToken, async (req, res) => {
     }
 
     // 验证账号归属
-    const account = db
+    const account = await dbAdapter
       .prepare('SELECT * FROM platform_accounts WHERE id = ? AND user_id = ?')
       .get(platformAccountId, req.user.id);
 
@@ -621,19 +621,19 @@ async function collectLHOrders(req, res, account, startDate, endDate) {
       console.log(`📊 LH API返回 ${orders.length} 条商品数据，合并后得到 ${orderMap.size} 个订单`);
 
       // ========== 第2步：将合并后的订单数据入库 ==========
-      const selectStmt = db.prepare(`
+      const selectStmt = dbAdapter.prepare(`
         SELECT id, status, order_amount, commission FROM orders
         WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
       `);
 
-      const insertStmt = db.prepare(`
+      const insertStmt = dbAdapter.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, affiliate_name, raw_data)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const updateStmt = db.prepare(`
+      const updateStmt = dbAdapter.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
             merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
@@ -896,7 +896,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
 
       // ========== 第2步：同步删除数据库中API不存在的订单（日期范围内） ==========
       // 查询数据库中该日期范围内的所有订单
-      const dbOrdersInRange = db.prepare(`
+      const dbOrdersInRange = dbAdapter.prepare(`
         SELECT order_id FROM orders
         WHERE user_id = ? AND platform_account_id = ?
           AND order_date >= ? AND order_date <= ?
@@ -908,7 +908,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
 
       let deletedCount = 0;
       if (ordersToDelete.length > 0) {
-        const deleteStmt = db.prepare(`
+        const deleteStmt = dbAdapter.prepare(`
           DELETE FROM orders
           WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
         `);
@@ -922,19 +922,19 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       }
 
       // ========== 第3步：将合并后的订单数据入库 ==========
-      const selectStmt = db.prepare(`
+      const selectStmt = dbAdapter.prepare(`
         SELECT id, status, order_amount, commission FROM orders
         WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
       `);
 
-      const insertStmt = db.prepare(`
+      const insertStmt = dbAdapter.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, affiliate_name, raw_data)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const updateStmt = db.prepare(`
+      const updateStmt = dbAdapter.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
             merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
@@ -1164,19 +1164,19 @@ async function collectLBOrders(req, res, account, startDate, endDate) {
       console.log(`📊 LB API返回 ${orders.length} 条商品数据，合并后得到 ${orderMap.size} 个订单`);
 
       // ========== 第2步：将合并后的订单数据入库 ==========
-      const selectStmt = db.prepare(`
+      const selectStmt = dbAdapter.prepare(`
         SELECT id, status, order_amount, commission FROM orders
         WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
       `);
 
-      const insertStmt = db.prepare(`
+      const insertStmt = dbAdapter.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, affiliate_name, raw_data)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const updateStmt = db.prepare(`
+      const updateStmt = dbAdapter.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
             merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
@@ -1417,19 +1417,19 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
       console.log(`📊 RW API返回 ${orders.length} 条商品数据，合并后得到 ${orderMap.size} 个订单`);
 
       // ========== 第2步：将合并后的订单数据入库 ==========
-      const selectStmt = db.prepare(`
+      const selectStmt = dbAdapter.prepare(`
         SELECT id, status, order_amount, commission FROM orders
         WHERE user_id = ? AND platform_account_id = ? AND order_id = ?
       `);
 
-      const insertStmt = db.prepare(`
+      const insertStmt = dbAdapter.prepare(`
         INSERT INTO orders
         (user_id, platform_account_id, order_id, merchant_id, merchant_name, merchant_slug,
          order_amount, commission, status, order_date, affiliate_name, raw_data)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const updateStmt = db.prepare(`
+      const updateStmt = dbAdapter.prepare(`
         UPDATE orders
         SET status = ?, commission = ?, order_amount = ?,
             merchant_name = ?, merchant_slug = ?, affiliate_name = ?, raw_data = ?, updated_at = CURRENT_TIMESTAMP
@@ -1583,7 +1583,7 @@ app.get('/api/orders', authenticateToken, (req, res) => {
 
     query += ' ORDER BY order_date DESC LIMIT 1000';
 
-    const orders = db.prepare(query).all(...params);
+    const orders = dbAdapter.prepare(query).all(...params);
 
     res.json({ success: true, data: orders });
   } catch (error) {
@@ -1627,7 +1627,7 @@ app.get('/api/stats', authenticateToken, (req, res) => {
       params.push(platformAccountId);
     }
 
-    const stats = db.prepare(query).get(...params);
+    const stats = dbAdapter.prepare(query).get(...params);
 
     res.json({ success: true, data: stats });
   } catch (error) {
@@ -1685,7 +1685,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
 
     orderQuery += ' GROUP BY o.merchant_id, o.merchant_name, pa.affiliate_name ORDER BY total_commission DESC';
 
-    const orderSummary = db.prepare(orderQuery).all(...orderParams);
+    const orderSummary = dbAdapter.prepare(orderQuery).all(...orderParams);
     console.log(`📊 订单汇总查询结果: ${orderSummary.length} 个商家`);
     if (orderSummary.length > 0) {
       console.log('样例商家:', orderSummary[0]);
@@ -1726,7 +1726,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
       if (accountIds.length > 0) {
         // 查询这些账号的affiliate_name并转为小写
         const placeholders = accountIds.map(() => '?').join(',');
-        const selectedAffiliateNames = db.prepare(`
+        const selectedAffiliateNames = dbAdapter.prepare(`
           SELECT DISTINCT affiliate_name FROM platform_accounts
           WHERE id IN (${placeholders}) AND user_id = ?
         `).all(...accountIds, req.user.id)
@@ -1746,7 +1746,7 @@ app.get('/api/merchant-summary', authenticateToken, (req, res) => {
 
     adsQuery += ' GROUP BY merchant_id, affiliate_name';
 
-    const adsSummary = db.prepare(adsQuery).all(...adsParams);
+    const adsSummary = dbAdapter.prepare(adsQuery).all(...adsParams);
     console.log(`📊 广告数据查询结果: ${adsSummary.length} 个商家`);
     if (adsSummary.length > 0) {
       console.log('样例广告商家:', adsSummary[0]);
@@ -1978,7 +1978,7 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
     }
 
     // 验证表格归属
-    const sheet = db
+    const sheet = await dbAdapter
       .prepare('SELECT * FROM google_sheets WHERE id = ? AND user_id = ?')
       .get(sheetId, req.user.id);
 
@@ -2009,18 +2009,18 @@ app.post('/api/collect-google-sheets', authenticateToken, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
 
     // 准备SQL语句
-    const selectStmt = db.prepare(`
+    const selectStmt = dbAdapter.prepare(`
       SELECT id FROM google_ads_data
       WHERE sheet_id = ? AND date = ? AND campaign_name = ?
     `);
 
-    const insertStmt = db.prepare(`
+    const insertStmt = dbAdapter.prepare(`
       INSERT INTO google_ads_data
       (user_id, sheet_id, date, campaign_name, affiliate_name, merchant_id, merchant_slug, campaign_budget, currency, impressions, clicks, cost)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const updateStmt = db.prepare(`
+    const updateStmt = dbAdapter.prepare(`
       UPDATE google_ads_data
       SET affiliate_name = ?, merchant_id = ?, merchant_slug = ?, campaign_budget = ?, currency = ?, impressions = ?, clicks = ?, cost = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -2184,7 +2184,7 @@ app.get('/api/google-ads-data', authenticateToken, (req, res) => {
 
     query += ' ORDER BY date DESC, campaign_name ASC LIMIT 1000';
 
-    const data = db.prepare(query).all(...params);
+    const data = dbAdapter.prepare(query).all(...params);
 
     res.json({ success: true, data: data });
   } catch (error) {
