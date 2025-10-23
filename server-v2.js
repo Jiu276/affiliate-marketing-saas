@@ -1337,15 +1337,53 @@ async function collectRWOrders(req, res, account, startDate, endDate) {
       limit: '1000'
     });
 
-    const apiUrl = 'https://admin.rewardoo.com/api.php?mod=medium&op=transaction_details';
+    // 尝试多个可能的API端点
+    const apiEndpoints = [
+      'https://admin.rewardoo.com/api.php?mod=medium&op=transaction_details',
+      'https://admin.rewardoo.com/api.php?mod=transaction&op=details',
+      'https://admin.rewardoo.com/api.php?mod=report&op=transaction',
+      'https://admin.rewardoo.com/api.php?mod=data&op=transaction'
+    ];
+    
+    let response;
+    let apiUrl;
+    
+    for (const endpoint of apiEndpoints) {
+      try {
+        console.log(`尝试API端点: ${endpoint}`);
+        apiUrl = endpoint;
+        response = await axios.post(endpoint, params, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        });
+        console.log(`API端点 ${endpoint} 响应状态:`, response.status);
+        console.log(`API端点 ${endpoint} 响应数据:`, JSON.stringify(response.data, null, 2));
+        
+        // 如果响应成功，跳出循环
+        if (response.status === 200) {
+          break;
+        }
+      } catch (error) {
+        console.log(`API端点 ${endpoint} 失败:`, error.message);
+        continue;
+      }
+    }
 
     console.log('📥 开始采集RW订单...');
+    console.log('RW Token:', rwToken);
+    console.log('日期范围:', startDate, '到', endDate);
+    console.log('API URL:', apiUrl);
+    console.log('请求参数:', params.toString());
 
     const response = await axios.post(apiUrl, params, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
+
+    console.log('RW API响应状态:', response.status);
+    console.log('RW API响应数据:', JSON.stringify(response.data, null, 2));
 
     // RW API响应格式与LB类似
     const isSuccess =
