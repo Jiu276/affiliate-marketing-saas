@@ -774,6 +774,7 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
 
     // 尝试不同的API接口路径
     const apiEndpoints = [
+      'https://api.partnermatic.com/report/performance',
       'https://api.partnermatic.com/api/transactions',
       'https://api.partnermatic.com/api/orders',
       'https://api.partnermatic.com/api/reports',
@@ -788,23 +789,68 @@ async function collectPMOrders(req, res, account, startDate, endDate) {
       try {
         console.log(`尝试API端点: ${endpoint}`);
         
-        response = await axios.post(
-          endpoint,
+        // 尝试不同的请求格式
+        const requestFormats = [
+          // 格式1: JWT Token在Header中
           {
-            source: 'partnermatic',
-            token: pmToken,
-            dataScope: 'user',
-            beginDate: startDate,
-            endDate: endDate,
-            curPage: 1,
-            perPage: 2000
+            data: {
+              beginDate: startDate,
+              endDate: endDate,
+              curPage: 1,
+              perPage: 2000
+            },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${pmToken}`
+            }
           },
+          // 格式2: Token在请求体中
           {
+            data: {
+              token: pmToken,
+              beginDate: startDate,
+              endDate: endDate,
+              curPage: 1,
+              perPage: 2000
+            },
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          },
+          // 格式3: 原始格式
+          {
+            data: {
+              source: 'partnermatic',
+              token: pmToken,
+              dataScope: 'user',
+              beginDate: startDate,
+              endDate: endDate,
+              curPage: 1,
+              perPage: 2000
+            },
             headers: {
               'Content-Type': 'application/json'
             }
           }
-        );
+        ];
+        
+        let formatSuccess = false;
+        for (const format of requestFormats) {
+          try {
+            response = await axios.post(endpoint, format.data, { headers: format.headers });
+            if (response.status === 200) {
+              formatSuccess = true;
+              break;
+            }
+          } catch (formatError) {
+            console.log(`请求格式失败: ${formatError.message}`);
+            continue;
+          }
+        }
+        
+        if (!formatSuccess) {
+          throw new Error('所有请求格式都失败了');
+        }
 
         console.log(`${endpoint} 响应状态:`, response.status);
         console.log(`${endpoint} 响应数据:`, JSON.stringify(response.data, null, 2));
